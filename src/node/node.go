@@ -48,9 +48,7 @@ func (n *Node) Broadcast(payload []byte) {
 		if peerID == n.id {
 			continue
 		}
-		if err := n.Send(peerID, payload); err != nil {
-			fmt.Printf("[ERROR] Failed to send to node %d: %v\n", peerID, err)
-		}
+		n.Send(peerID, payload)
 	}
 }
 
