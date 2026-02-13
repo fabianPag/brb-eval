@@ -1,0 +1,39 @@
+general:
+  stop_time: 10s
+
+network:
+  graph:
+    type: 1_gbit_switch
+
+hosts:
+  peer0:
+    network_node_id: 0
+    processes:
+    - path: ../bin/brb-eval
+      args: "-addr=peer0:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080"
+      start_time: 1s
+      expected_final_state: running
+
+  peer1:
+    network_node_id: 0
+    processes:
+    - path: ../bin/brb-eval
+      args: "-addr=peer1:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080"
+      start_time: 1s
+      expected_final_state: running
+  
+  peer2:
+    network_node_id: 0
+    processes:
+    - path: ../bin/brb-eval
+      args: "-addr=peer2:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080"
+      start_time: 1s
+      expected_final_state: running
+
+  peer3:
+    network_node_id: 0
+    processes:
+    - path: ../bin/brb-eval
+      args: "-addr=peer3:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080 -inputValue=Hello"
+      start_time: 2s
+      expected_final_state: running
