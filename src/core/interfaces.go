@@ -2,7 +2,7 @@ package core
 
 type NodeID int32
 
-type Node interface {
+type Manager interface {
 	Send(to NodeID, msg []byte)
 	Broadcast(msg []byte)
 	OnReceive(handler MessageHandler)

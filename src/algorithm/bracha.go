@@ -27,7 +27,7 @@ type BroadcastID struct {
 }
 
 type Bracha struct {
-	node          core.Node
+	manager          core.Manager
 	echoReceived  map[BroadcastID]map[core.NodeID]bool
 	echoSent      bool
 	readyReceived map[BroadcastID]map[core.NodeID]bool
@@ -37,11 +37,11 @@ type Bracha struct {
 	t             int
 }
 
-func NewBracha(n core.Node) *Bracha {
-	nCount := n.NumPeers()
+func NewBracha(m core.Manager) *Bracha {
+	nCount := m.NumPeers()
 
 	return &Bracha{
-		node:          n,
+		manager:          m,
 		n:             nCount,
 		t:             (nCount - 1) / 3,
 		echoReceived:  make(map[BroadcastID]map[core.NodeID]bool),
@@ -109,25 +109,25 @@ func (b *Bracha) HandleIncoming(fromID core.NodeID, payload []byte) {
 		}
 		if len(b.readyReceived[key]) >= 2*b.t+1 && !b.delivered {
 			b.delivered = true
-			b.node.Deliver(msg.Initiator, []byte(msg.Value))
+			b.manager.Deliver(msg.Initiator, []byte(msg.Value))
 		}
 	}
 }
 
 func (b *Bracha) broadcastMsg(msgType MsgType, initiator core.NodeID, value string) {
-	msg := Message{Type: msgType, Sender: b.node.ID(), Initiator: initiator, Value: value}
+	msg := Message{Type: msgType, Sender: b.manager.ID(), Initiator: initiator, Value: value}
 	data, err := json.Marshal(msg)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to marshal message type %s: %v\n", msgType, err)
 		return
 	}
-	b.node.Broadcast(data)
+	b.manager.Broadcast(data)
 	fmt.Printf("[BROADCAST] Type=%s Initiator=%d Value=%s\n", msg.Type, initiator, value)
 
-	b.HandleIncoming(b.node.ID(), data) // "Deliver" same message to self
+	b.HandleIncoming(b.manager.ID(), data) // "Deliver" same message to self
 }
 
 func (b *Bracha) Broadcast(valueToSend string) {
 	fmt.Printf("[INIT] Initiating broadcast with value: %s\n", valueToSend)
-	b.broadcastMsg(Init, b.node.ID(), valueToSend)
+	b.broadcastMsg(Init, b.manager.ID(), valueToSend)
 }
