@@ -9,7 +9,7 @@ hosts:
   peer0:
     network_node_id: 0
     processes:
-    - path: ../bin/brb-eval
+    - path: ../bin/node
       args: "-addr=peer0:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080"
       start_time: 1s
       expected_final_state: running
@@ -17,7 +17,7 @@ hosts:
   peer1:
     network_node_id: 0
     processes:
-    - path: ../bin/brb-eval
+    - path: ../bin/node
       args: "-addr=peer1:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080"
       start_time: 1s
       expected_final_state: running
@@ -25,7 +25,7 @@ hosts:
   peer2:
     network_node_id: 0
     processes:
-    - path: ../bin/brb-eval
+    - path: ../bin/node
       args: "-addr=peer2:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080"
       start_time: 1s
       expected_final_state: running
@@ -33,7 +33,7 @@ hosts:
   peer3:
     network_node_id: 0
     processes:
-    - path: ../bin/brb-eval
+    - path: ../bin/node
       args: "-addr=peer3:8080 -peers=peer0:8080,peer1:8080,peer2:8080,peer3:8080 -inputValue=Hello"
       start_time: 2s
       expected_final_state: running

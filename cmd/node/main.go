@@ -1,11 +1,11 @@
 package main
 
 import (
-	"brb-eval/algorithm"
-	"brb-eval/core"
-	"brb-eval/fault"
-	"brb-eval/manager"
-	"brb-eval/transport"
+	"brb-eval/internal/node/algorithm"
+	"brb-eval/internal/node/core"
+	"brb-eval/internal/node/fault"
+	"brb-eval/internal/node/manager"
+	"brb-eval/internal/node/transport"
 	"flag"
 	"fmt"
 	"os"

@@ -1,8 +1,8 @@
 package manager
 
 import (
-	"brb-eval/core"
-	"brb-eval/fault"
+	"brb-eval/internal/node/core"
+	"brb-eval/internal/node/fault"
 	"fmt"
 )
 

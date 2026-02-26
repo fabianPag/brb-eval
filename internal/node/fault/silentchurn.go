@@ -1,7 +1,7 @@
 package fault
 
 import (
-	"brb-eval/core"
+	"brb-eval/internal/node/core"
 	"fmt"
 )
 

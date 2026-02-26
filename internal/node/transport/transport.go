@@ -1,7 +1,7 @@
 package transport
 
 import (
-	"brb-eval/core"
+	"brb-eval/internal/node/core"
 	"encoding/binary"
 	"fmt"
 	"io"

@@ -1,7 +1,7 @@
 package algorithm
 
 import (
-	"brb-eval/core"
+	"brb-eval/internal/node/core"
 	"encoding/json"
 	"fmt"
 )
@@ -27,7 +27,7 @@ type BroadcastID struct {
 }
 
 type Bracha struct {
-	manager          core.Manager
+	manager       core.Manager
 	echoReceived  map[BroadcastID]map[core.NodeID]bool
 	echoSent      bool
 	readyReceived map[BroadcastID]map[core.NodeID]bool
@@ -41,7 +41,7 @@ func NewBracha(m core.Manager) *Bracha {
 	nCount := m.NumPeers()
 
 	return &Bracha{
-		manager:          m,
+		manager:       m,
 		n:             nCount,
 		t:             (nCount - 1) / 3,
 		echoReceived:  make(map[BroadcastID]map[core.NodeID]bool),

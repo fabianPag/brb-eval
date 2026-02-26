@@ -1,6 +1,6 @@
 package fault
 
-import "brb-eval/core"
+import "brb-eval/internal/node/core"
 
 type Injector interface {
 	ProcessSend(to core.NodeID, payload []byte, transport core.Transport) error
