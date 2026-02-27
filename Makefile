@@ -1,12 +1,15 @@
+PEERS ?= 4
+
 build:
 	@mkdir -p ./bin
 	go build -o ./bin/node ./cmd/node
 	go build -o ./bin/controller ./cmd/controller
 
-sim: build
-	rm -rf ./sim/shadow.data
-	cd ./sim && shadow shadow.yaml
-
 clean:
 	rm -rf ./bin
-	rm -rf ./sim/shadow.data
+	rm -rf ./sim
+
+sim: clean build
+	@mkdir -p ./sim
+	./scripts/generate_shadow_config.sh $(PEERS) sim/shadow.yaml
+	cd ./sim && shadow shadow.yaml
