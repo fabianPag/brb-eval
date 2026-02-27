@@ -15,6 +15,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func parseDroppedNodes(rawDrop string) map[core.NodeID]bool {
@@ -116,7 +117,10 @@ func registerWithController(controllerAddr string, nodeAddr string, nodeID int) 
 		return api.Config{}, err
 	}
 
-	resp, err := http.Post("http://"+controllerAddr+"/register", "application/json", bytes.NewReader(body))
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+	resp, err := client.Post("http://"+controllerAddr+"/register", "application/json", bytes.NewReader(body))
 	if err != nil {
 		return api.Config{}, err
 	}
@@ -133,7 +137,11 @@ func registerWithController(controllerAddr string, nodeAddr string, nodeID int) 
 func waitForStart(controllerURL string, id int) error {
 	url := fmt.Sprintf("http://%s/ready?id=%d", controllerURL, id)
 
-	resp, err := http.Get(url)
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+
+	resp, err := client.Get(url)
 	if err != nil {
 		return err
 	}
