@@ -47,6 +47,12 @@ func main() {
 
 	fmt.Printf("Starting node at %s\n", *nodeAddr)
 
+	tcpTransport := transport.NewTCPTransport(core.NodeID(*nodeID))
+	if err := tcpTransport.Listen(*nodeAddr); err != nil {
+		fmt.Printf("[ERROR] Failed to start listener: %v\n", err)
+		os.Exit(1)
+	}
+
 	config, err := registerWithController(*controllerAddr, *nodeAddr, *nodeID)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to register with controller: %v\n", err)
@@ -59,11 +65,14 @@ func main() {
 		peers[core.NodeID(id)] = info.Address
 	}
 
-	tcpTransport := transport.NewTCPTransport(core.NodeID(*nodeID), peers)
-	if err := tcpTransport.Listen(*nodeAddr); err != nil {
-		fmt.Printf("[ERROR] Failed to start listener: %v\n", err)
+	tcpTransport.SetPeers(peers)
+
+	fmt.Println("Connecting to peers...")
+	if err := tcpTransport.ConnectAll(); err != nil {
+		fmt.Printf("[ERROR] Failed to connect to peers: %v\n", err)
 		os.Exit(1)
 	}
+	fmt.Println("Connected to all peers.")
 
 	fmt.Printf("Waiting for start signal...\n")
 	if err := waitForStart(*controllerAddr, *nodeID); err != nil {

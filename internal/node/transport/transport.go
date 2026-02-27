@@ -9,6 +9,8 @@ import (
 	"sync"
 )
 
+const MaxMessageSize = 1024 * 1024 // 1 MiB
+
 type TCPTransport struct {
 	id       core.NodeID
 	peers    map[core.NodeID]string
@@ -17,13 +19,19 @@ type TCPTransport struct {
 	mu       sync.Mutex
 }
 
-func NewTCPTransport(id core.NodeID, peers map[core.NodeID]string) core.Transport {
+func NewTCPTransport(id core.NodeID) core.Transport {
 	return &TCPTransport{
 		id:       id,
-		peers:    peers,
+		peers:    make(map[core.NodeID]string),
 		recvChan: make(chan core.TransportMessage, 1000),
 		conns:    make(map[core.NodeID]net.Conn),
 	}
+}
+
+func (t *TCPTransport) SetPeers(peers map[core.NodeID]string) {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.peers = peers
 }
 
 func (t *TCPTransport) getOrDialConn(toID core.NodeID) (net.Conn, error) {
@@ -32,11 +40,17 @@ func (t *TCPTransport) getOrDialConn(toID core.NodeID) (net.Conn, error) {
 	t.mu.Unlock()
 
 	if exists {
-		fmt.Printf("[NETWORK] Node %d REUSING open connection to Node %d\n", t.id, toID)
 		return conn, nil
 	}
-	fmt.Printf("[NETWORK] Node %d DIALING new connection to Node %d\n", t.id, toID)
-	addr := t.peers[toID]
+
+	t.mu.Lock()
+	addr, ok := t.peers[toID]
+	t.mu.Unlock()
+
+	if !ok {
+		return nil, fmt.Errorf("unknown peer %d", toID)
+	}
+
 	newConn, err := net.Dial("tcp", addr)
 	if err != nil {
 		return nil, err
@@ -45,6 +59,25 @@ func (t *TCPTransport) getOrDialConn(toID core.NodeID) (net.Conn, error) {
 	t.conns[toID] = newConn
 	t.mu.Unlock()
 	return newConn, nil
+}
+
+func (t *TCPTransport) ConnectAll() error {
+	t.mu.Lock()
+	peers := make([]core.NodeID, 0, len(t.peers))
+	for id := range t.peers {
+		peers = append(peers, id)
+	}
+	t.mu.Unlock()
+
+	for _, id := range peers {
+		if id == t.id {
+			continue
+		}
+		if _, err := t.getOrDialConn(id); err != nil {
+			return fmt.Errorf("failed to connect to node %d: %v", id, err)
+		}
+	}
+	return nil
 }
 
 func (t *TCPTransport) Send(toID core.NodeID, payload []byte) error {
@@ -109,6 +142,11 @@ func (t *TCPTransport) handleIncoming(conn net.Conn) {
 			return
 		}
 
+		if length > MaxMessageSize {
+			fmt.Printf("[ERROR] Message too large from node %d: %d bytes\n", senderID, length)
+			return
+		}
+
 		buf := make([]byte, length)
 		if _, err := io.ReadFull(conn, buf); err != nil {
 			fmt.Printf("[ERROR] Failed to read message payload: %v\n", err)
@@ -127,5 +165,7 @@ func (t *TCPTransport) Receive() <-chan core.TransportMessage {
 }
 
 func (t *TCPTransport) NumPeers() int {
+	t.mu.Lock()
+	defer t.mu.Unlock()
 	return len(t.peers)
 }

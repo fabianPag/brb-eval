@@ -23,5 +23,7 @@ type Transport interface {
 	Receive() <-chan TransportMessage
 	Send(to NodeID, payload []byte) error
 	Listen(addr string) error
+	ConnectAll() error
 	NumPeers() int
+	SetPeers(peers map[NodeID]string)
 }
