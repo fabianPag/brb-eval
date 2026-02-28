@@ -57,7 +57,7 @@ func (m *Manager) Broadcast(payload []byte) {
 		if peerID == m.id {
 			continue
 		}
-		m.Send(peerID, payload)
+		go m.Send(peerID, payload)
 	}
 }
 
