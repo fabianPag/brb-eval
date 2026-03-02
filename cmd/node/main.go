@@ -8,9 +8,11 @@ import (
 	"brb-eval/internal/node/manager"
 	"brb-eval/internal/node/transport"
 	"bytes"
+	"crypto/ed25519"
 	"encoding/json"
 	"flag"
 	"fmt"
+	"log"
 	"net/http"
 	"os"
 	"strconv"
@@ -39,6 +41,11 @@ func main() {
 	dropNodes := flag.String("drop", "", "comma-separated list of node IDs to silently drop (e.g., '1,3')")
 	controllerAddr := flag.String("controller", "", "address of the controller")
 
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		log.Fatal(err)
+	}
+
 	flag.Parse()
 
 	if *nodeID < 0 || *nodeAddr == "" || *controllerAddr == "" {
@@ -54,7 +61,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	config, err := registerWithController(*controllerAddr, *nodeAddr, *nodeID)
+	config, err := registerWithController(*controllerAddr, *nodeAddr, *nodeID, pub)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to register with controller: %v\n", err)
 		os.Exit(1)
@@ -64,6 +71,11 @@ func main() {
 	peers := make(map[core.NodeID]string)
 	for id, info := range config.Peers {
 		peers[core.NodeID(id)] = info.Address
+	}
+
+	publicKeys := make(map[core.NodeID]ed25519.PublicKey)
+	for id, info := range config.Peers {
+		publicKeys[core.NodeID(id)] = info.PublicKey
 	}
 
 	tcpTransport.SetPeers(peers)
@@ -93,23 +105,24 @@ func main() {
 
 	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector)
 
-	bracha := algorithm.NewBracha(mgr)
+	//bracha := algorithm.NewBracha(mgr)
+	mbrb := algorithm.NewMBRB(mgr, len(peers)/3, priv, publicKeys)
 
-	mgr.OnReceive(bracha.HandleIncoming)
+	mgr.OnReceive(mbrb.HandleIncoming)
 
 	if config.ShouldInitiate {
 		fmt.Printf("Initiating broadcast.\n")
-		bracha.Broadcast("Hello")
+		mbrb.Broadcast("Hello")
 	}
 
 	mgr.Run()
 }
 
-func registerWithController(controllerAddr string, nodeAddr string, nodeID int) (api.Config, error) {
+func registerWithController(controllerAddr string, nodeAddr string, nodeID int, publicKey ed25519.PublicKey) (api.Config, error) {
 	myInfo := api.PeerInfo{
 		ID:        nodeID,
 		Address:   nodeAddr,
-		PublicKey: nil,
+		PublicKey: publicKey,
 	}
 
 	body, err := json.Marshal(myInfo)
