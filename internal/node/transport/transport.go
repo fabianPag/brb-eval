@@ -7,7 +7,6 @@ import (
 	"io"
 	"net"
 	"sync"
-	"time"
 )
 
 const MaxMessageSize = 1024 * 1024 // 1 MiB
@@ -40,88 +39,69 @@ func (t *TCPTransport) SetPeers(peers map[core.NodeID]string) {
 	t.peers = peers
 }
 
-func (t *TCPTransport) getOrDialConn(id core.NodeID) (*PeerConn, error) {
-	t.mu.RLock()
-	pc, exists := t.conns[id]
-	t.mu.RUnlock()
-
-	if exists {
-		return pc, nil
-	}
-	t.mu.Lock()
-	defer t.mu.Unlock()
-
-	if pc, exists = t.conns[id]; exists {
-		return pc, nil
-	}
-
+func (t *TCPTransport) dialConn(id core.NodeID) {
 	addr, ok := t.peers[id]
 	if !ok {
-		return nil, fmt.Errorf("unknown peer %d", id)
+		// If we don't know the ip, then abort.
+		return
 	}
 
 	conn, err := net.Dial("tcp", addr)
 	if err != nil {
-		return nil, err
+		fmt.Printf("[ERROR] Failed to dial %d: %v\n", id, err)
+		return
 	}
 
-	pc = &PeerConn{conn: conn}
-	t.conns[id] = pc
+	handshake := make([]byte, 4)
+	binary.BigEndian.PutUint32(handshake, uint32(t.id))
+	if _, err := conn.Write(handshake); err != nil {
+		conn.Close()
+		return
+	}
 
-	return pc, nil
+	t.registerConn(id, conn)
+	go t.handleIncoming(conn, id)
 }
 
 func (t *TCPTransport) Send(toID core.NodeID, payload []byte) error {
-	pc, err := t.getOrDialConn(toID)
-	if err != nil {
-		return err
+	pc, exists := t.conns[toID]
+
+	if !exists {
+		return fmt.Errorf("no active connection to peer %d", toID)
 	}
 
-	packet := make([]byte, 8+len(payload))
+	packet := make([]byte, 4+len(payload))
+	binary.BigEndian.PutUint32(packet[0:4], uint32(len(payload)))
+	copy(packet[4:], payload)
 
-	binary.BigEndian.PutUint32(packet[0:4], uint32(t.id))
-	binary.BigEndian.PutUint32(packet[4:8], uint32(len(payload)))
+	_, err := pc.conn.Write(packet)
 
-	copy(packet[8:], payload)
-
-	pc.mu.Lock()
-	_, writeErr := pc.conn.Write(packet)
-	pc.mu.Unlock()
-
-	if writeErr != nil {
-		err := pc.conn.Close()
-		if err != nil {
-			return err
-		}
-		t.mu.Lock()
-		delete(t.conns, toID)
-		t.mu.Unlock()
-
-		return fmt.Errorf("send failed: %w", writeErr)
-	}
-
-	return nil
+	return err
 }
 
 func (t *TCPTransport) ConnectAll() error {
-	t.mu.RLock()
-	peers := make([]core.NodeID, 0, len(t.peers))
-	for id := range t.peers {
-		peers = append(peers, id)
-	}
-	t.mu.RUnlock()
+	var wg sync.WaitGroup
 
-	for _, id := range peers {
-		if id == t.id {
-			continue
-		}
-		for i := 0; i < 3; i++ {
-			if _, err := t.getOrDialConn(id); err == nil {
-				break
-			}
-			time.Sleep(100 * time.Millisecond)
+	const maxWorkers = 20
+	sem := make(chan struct{}, maxWorkers)
+
+	for id := range t.peers {
+		if id > t.id {
+			wg.Add(1)
+
+			sem <- struct{}{}
+
+			go func(peerID core.NodeID) {
+				defer wg.Done()
+
+				defer func() { <-sem }()
+
+				t.dialConn(peerID)
+			}(id)
 		}
 	}
+
+	wg.Wait() // Wait for all connections to be dialed so we don't report ready before
 	return nil
 }
 
@@ -130,6 +110,7 @@ func (t *TCPTransport) Listen(addr string) error {
 	if err != nil {
 		return err
 	}
+
 	fmt.Printf("[INFO] Started transport at %s\n", addr)
 
 	go func() {
@@ -138,31 +119,47 @@ func (t *TCPTransport) Listen(addr string) error {
 			if err != nil {
 				continue
 			}
-			go t.handleIncoming(conn)
+
+			go t.acceptHandshake(conn)
 		}
 	}()
 	return nil
 }
 
-func (t *TCPTransport) handleIncoming(conn net.Conn) {
-	defer func(conn net.Conn) {
-		err := conn.Close()
-		if err != nil {
+func (t *TCPTransport) acceptHandshake(conn net.Conn) {
+	var dialerID uint32
+	if err := binary.Read(conn, binary.BigEndian, &dialerID); err != nil {
+		conn.Close()
+		return
+	}
 
-		}
-	}(conn)
+	peerID := core.NodeID(dialerID)
+
+	t.registerConn(peerID, conn)
+	go t.handleIncoming(conn, peerID)
+}
+
+func (t *TCPTransport) registerConn(id core.NodeID, conn net.Conn) {
+	t.mu.Lock()
+	t.conns[id] = &PeerConn{conn: conn}
+	t.mu.Unlock()
+}
+
+func (t *TCPTransport) handleIncoming(conn net.Conn, peerID core.NodeID) {
+	defer func() {
+		conn.Close()
+		t.mu.Lock()
+		delete(t.conns, peerID)
+		t.mu.Unlock()
+	}()
 
 	for {
-		var senderID, length int32
-		if err := binary.Read(conn, binary.BigEndian, &senderID); err != nil {
-			return
-		}
+		var length int32
 		if err := binary.Read(conn, binary.BigEndian, &length); err != nil {
 			return
 		}
 
 		if length > MaxMessageSize || length < 0 {
-			fmt.Printf("[ERROR] Message too large from node %d: %d bytes\n", senderID, length)
 			return
 		}
 
@@ -172,7 +169,7 @@ func (t *TCPTransport) handleIncoming(conn net.Conn) {
 		}
 
 		t.recvChan <- core.TransportMessage{
-			From:    core.NodeID(senderID),
+			From:    peerID,
 			Payload: buf,
 		}
 	}
