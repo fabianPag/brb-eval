@@ -11,9 +11,10 @@ type Manager struct {
 	transport core.Transport
 	injector  fault.Injector
 	handler   core.MessageHandler
+	metrics   core.Metrics
 }
 
-func New(id core.NodeID, transport core.Transport, injector fault.Injector) *Manager {
+func New(id core.NodeID, transport core.Transport, injector fault.Injector, metrics core.Metrics) *Manager {
 	if injector == nil {
 		injector = &fault.PassThroughInjector{}
 	}
@@ -21,6 +22,7 @@ func New(id core.NodeID, transport core.Transport, injector fault.Injector) *Man
 		id:        id,
 		transport: transport,
 		injector:  injector,
+		metrics:   metrics,
 	}
 }
 
@@ -39,6 +41,7 @@ func (m *Manager) OnReceive(handler core.MessageHandler) {
 func (m *Manager) Run() {
 	for msg := range m.transport.Receive() {
 		if m.handler != nil {
+			m.metrics.RecordMessageRecieved(len(msg.Payload))
 			m.handler(msg.From, msg.Payload)
 		}
 	}
@@ -48,7 +51,10 @@ func (m *Manager) Send(to core.NodeID, payload []byte) {
 	err := m.injector.ProcessSend(to, payload, m.transport)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to send to node %d: %v\n", to, err)
+		return
 	}
+
+	m.metrics.RecordMessageSent(len(payload))
 }
 
 func (m *Manager) Broadcast(payload []byte) {
@@ -63,4 +69,7 @@ func (m *Manager) Broadcast(payload []byte) {
 
 func (m *Manager) Deliver(initiator core.NodeID, value []byte) {
 	fmt.Printf("[DELIVER] From node %d: %s\n", initiator, string(value))
+
+	m.metrics.RecordDelivery()
+	m.metrics.PrintMetrics()
 }

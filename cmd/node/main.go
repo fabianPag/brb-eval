@@ -6,6 +6,7 @@ import (
 	"brb-eval/internal/node/core"
 	"brb-eval/internal/node/fault"
 	"brb-eval/internal/node/manager"
+	"brb-eval/internal/node/metrics"
 	"brb-eval/internal/node/transport"
 	"bytes"
 	"crypto/ed25519"
@@ -103,7 +104,9 @@ func main() {
 		injector = &fault.PassThroughInjector{}
 	}
 
-	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector)
+	metricsInstance := metrics.New()
+
+	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector, metricsInstance)
 
 	//bracha := algorithm.NewBracha(mgr)
 	mbrb := algorithm.NewMBRB(mgr, len(peers)/3, priv, publicKeys)
@@ -112,6 +115,7 @@ func main() {
 
 	if config.ShouldInitiate {
 		fmt.Printf("Initiating broadcast.\n")
+		metricsInstance.RecordInitTime()
 		mbrb.Broadcast("Hello")
 	}
 

@@ -27,3 +27,11 @@ type Transport interface {
 	NumPeers() int
 	SetPeers(peers map[NodeID]string)
 }
+
+type Metrics interface {
+	RecordInitTime()
+	RecordDelivery()
+	RecordMessageSent(payloadSize int)
+	RecordMessageRecieved(payloadSize int)
+	PrintMetrics()
+}
