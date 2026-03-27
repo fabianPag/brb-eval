@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"os"
 	"strconv"
 	"sync"
 )
@@ -14,6 +15,7 @@ type Controller struct {
 	targetNodes     int
 	registeredNodes map[int]api.PeerInfo
 	readyNodes      map[int]bool
+	nodeMetrics     map[int]api.MetricsData
 	allRegistered   chan struct{}
 	allReady        chan struct{}
 }
@@ -23,6 +25,7 @@ func New(targetNodes int) *Controller {
 		targetNodes:     targetNodes,
 		registeredNodes: make(map[int]api.PeerInfo),
 		readyNodes:      make(map[int]bool),
+		nodeMetrics:     make(map[int]api.MetricsData),
 		allRegistered:   make(chan struct{}),
 		allReady:        make(chan struct{}),
 	}
@@ -31,8 +34,47 @@ func New(targetNodes int) *Controller {
 func (c *Controller) Run(addr string) error {
 	http.HandleFunc("/register", c.handleRegister)
 	http.HandleFunc("/ready", c.handleReady)
+	http.HandleFunc("/metrics", c.handleMetrics)
 	fmt.Println("Starting controller at", addr)
 	return http.ListenAndServe(addr, nil)
+}
+
+func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
+	var metrics api.MetricsData
+	if err := json.NewDecoder(r.Body).Decode(&metrics); err != nil {
+		http.Error(w, "Invalid request body", http.StatusBadRequest)
+		return
+	}
+
+	c.mu.Lock()
+	c.nodeMetrics[metrics.NodeID] = metrics
+	receivedCount := len(c.nodeMetrics)
+	allReceived := receivedCount == c.targetNodes
+	c.mu.Unlock()
+
+	fmt.Printf("Node %d sent metrics\n", metrics.NodeID)
+
+	if allReceived {
+		if err := c.saveMetricsToFile("metrics.json"); err != nil {
+			fmt.Printf("[ERROR] Failed to save metrics: %v\n", err)
+		}
+	}
+
+	w.WriteHeader(http.StatusOK)
+}
+
+func (c *Controller) saveMetricsToFile(filename string) error {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	data, err := json.MarshalIndent(c.nodeMetrics, "", "  ")
+	if err != nil {
+		return err
+	}
+	err = os.WriteFile(filename, data, 0644)
+	if err == nil {
+		fmt.Printf("Metrics saved to %s\n", filename)
+	}
+	return err
 }
 
 func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {

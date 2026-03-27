@@ -10,6 +10,7 @@ type Manager interface {
 	NumPeers() int
 	Deliver(initiator NodeID, value []byte)
 	Run()
+	Wait()
 }
 
 type TransportMessage struct {

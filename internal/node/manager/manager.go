@@ -12,6 +12,7 @@ type Manager struct {
 	injector  fault.Injector
 	handler   core.MessageHandler
 	metrics   core.Metrics
+	done      chan struct{}
 }
 
 func New(id core.NodeID, transport core.Transport, injector fault.Injector, metrics core.Metrics) *Manager {
@@ -23,6 +24,7 @@ func New(id core.NodeID, transport core.Transport, injector fault.Injector, metr
 		transport: transport,
 		injector:  injector,
 		metrics:   metrics,
+		done:      make(chan struct{}),
 	}
 }
 
@@ -72,4 +74,10 @@ func (m *Manager) Deliver(initiator core.NodeID, value []byte) {
 
 	m.metrics.RecordDelivery()
 	m.metrics.PrintMetrics()
+
+	m.done <- struct{}{}
+}
+
+func (m *Manager) Wait() {
+	<-m.done
 }

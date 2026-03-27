@@ -77,3 +77,26 @@ func (m *Metrics) PrintMetrics() {
 	fmt.Println("Total Messages Sent:", m.totalMessagesSent)
 	fmt.Println("Total Bytes Sent:", m.totalBytesSent)
 }
+
+type MetricsResults struct {
+	FirstMessageTime  time.Time
+	DeliveryTime      time.Time
+	TotalMessagesRecv int64
+	TotalBytesRecv    int64
+	TotalMessagesSent int64
+	TotalBytesSent    int64
+}
+
+func (m *Metrics) GetMetrics() MetricsResults {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return MetricsResults{
+		FirstMessageTime:  m.firstMessageTime,
+		DeliveryTime:      m.deliveryTime,
+		TotalMessagesRecv: m.totalMessagesRecv,
+		TotalBytesRecv:    m.totalBytesRecv,
+		TotalMessagesSent: m.totalMessagesSent,
+		TotalBytesSent:    m.totalBytesSent,
+	}
+}

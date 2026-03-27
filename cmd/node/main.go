@@ -113,13 +113,54 @@ func main() {
 
 	mgr.OnReceive(mbrb.HandleIncoming)
 
+	go mgr.Run()
+
 	if config.ShouldInitiate {
 		fmt.Printf("Initiating broadcast.\n")
 		metricsInstance.RecordInitTime()
 		mbrb.Broadcast("Hello")
 	}
 
-	mgr.Run()
+	mgr.Wait() // Wait until manager signals done.
+
+	metricsResults := metricsInstance.GetMetrics()
+
+	metricsData := api.MetricsData{
+		NodeID:            *nodeID,
+		FirstMessageTime:  metricsResults.FirstMessageTime,
+		DeliveryTime:      metricsResults.DeliveryTime,
+		TotalMessagesRecv: metricsResults.TotalMessagesRecv,
+		TotalBytesRecv:    metricsResults.TotalBytesRecv,
+		TotalMessagesSent: metricsResults.TotalMessagesSent,
+		TotalBytesSent:    metricsResults.TotalBytesSent,
+	}
+
+	if err := sendMetrics(*controllerAddr, metricsData); err != nil {
+		fmt.Printf("[ERROR] Failed to send metrics: %v\n", err)
+	}
+
+	select {}
+}
+
+func sendMetrics(controllerAddr string, data api.MetricsData) error {
+	body, err := json.Marshal(data)
+	if err != nil {
+		return err
+	}
+
+	client := &http.Client{
+		Timeout: time.Second * 10,
+	}
+	resp, err := client.Post("http://"+controllerAddr+"/metrics", "application/json", bytes.NewReader(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+	fmt.Printf("Metrics sent successfully.\n")
+	return nil
 }
 
 func registerWithController(controllerAddr string, nodeAddr string, nodeID int, publicKey ed25519.PublicKey) (api.Config, error) {
