@@ -26,7 +26,7 @@ type MsgKey struct {
 	SeqNum    int
 }
 
-type MBRB struct {
+type MBRB2023 struct {
 	manager   core.Manager
 	mu        sync.Mutex
 	n         int
@@ -38,8 +38,8 @@ type MBRB struct {
 	hasSigned map[MsgKey]bool
 }
 
-func NewMBRB(m core.Manager, t int, priv ed25519.PrivateKey, pubs map[core.NodeID]ed25519.PublicKey) *MBRB {
-	return &MBRB{
+func NewMBRB2023(m core.Manager, t int, priv ed25519.PrivateKey, pubs map[core.NodeID]ed25519.PublicKey) *MBRB2023 {
+	return &MBRB2023{
 		manager:   m,
 		n:         m.NumPeers(),
 		t:         t,
@@ -51,7 +51,7 @@ func NewMBRB(m core.Manager, t int, priv ed25519.PrivateKey, pubs map[core.NodeI
 	}
 }
 
-func (b *MBRB) HandleIncoming(fromID core.NodeID, msg []byte) {
+func (b *MBRB2023) HandleIncoming(fromID core.NodeID, msg []byte) {
 	var bundle Bundle
 	if err := json.Unmarshal(msg, &bundle); err != nil {
 		fmt.Printf("[ERROR] Failed to unmarshal message from node %d: %v\n", fromID, err)
@@ -111,7 +111,7 @@ func (b *MBRB) HandleIncoming(fromID core.NodeID, msg []byte) {
 	}
 }
 
-func (b *MBRB) Broadcast(value string) {
+func (b *MBRB2023) Broadcast(value string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -128,12 +128,12 @@ func (b *MBRB) Broadcast(value string) {
 	b.sendBundle(key, value)
 }
 
-func (b *MBRB) sign(value string, sn int, origin core.NodeID) []byte {
+func (b *MBRB2023) sign(value string, sn int, origin core.NodeID) []byte {
 	msg := fmt.Sprintf("%s|%d|%d", value, sn, origin)
 	return ed25519.Sign(b.privKey, []byte(msg))
 }
 
-func (b *MBRB) verify(value string, sn int, origin core.NodeID, signer core.NodeID, sig []byte) bool {
+func (b *MBRB2023) verify(value string, sn int, origin core.NodeID, signer core.NodeID, sig []byte) bool {
 	pub, ok := b.pubKeys[signer]
 	if !ok {
 		return false
@@ -142,7 +142,7 @@ func (b *MBRB) verify(value string, sn int, origin core.NodeID, signer core.Node
 	return ed25519.Verify(pub, []byte(msg), sig)
 }
 
-func (b *MBRB) sendBundle(key MsgKey, value string) {
+func (b *MBRB2023) sendBundle(key MsgKey, value string) {
 	bundle := Bundle{
 		Initiator: key.Initiator,
 		SeqNum:    key.SeqNum,

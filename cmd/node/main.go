@@ -109,7 +109,7 @@ func main() {
 	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector, metricsInstance)
 
 	//bracha := algorithm.NewBracha(mgr)
-	mbrb := algorithm.NewMBRB(mgr, len(peers)/3, priv, publicKeys)
+	mbrb := algorithm.NewMBRB2023(mgr, len(peers)/3, priv, publicKeys)
 
 	mgr.OnReceive(mbrb.HandleIncoming)
 
