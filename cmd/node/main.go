@@ -2,7 +2,7 @@ package main
 
 import (
 	"brb-eval/internal/controller/api"
-	"brb-eval/internal/node/algorithm"
+	"brb-eval/internal/node/algorithm/codedmbrb"
 	"brb-eval/internal/node/core"
 	"brb-eval/internal/node/fault"
 	"brb-eval/internal/node/manager"
@@ -42,7 +42,7 @@ func main() {
 	dropNodes := flag.String("drop", "", "comma-separated list of node IDs to silently drop (e.g., '1,3')")
 	controllerAddr := flag.String("controller", "", "address of the controller")
 
-	pub, priv, err := ed25519.GenerateKey(nil)
+	pub, _, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -109,7 +109,7 @@ func main() {
 	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector, metricsInstance)
 
 	//bracha := algorithm.NewBracha(mgr)
-	mbrb := algorithm.NewMBRB2023(mgr, len(peers)/3, priv, publicKeys)
+	mbrb := codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
 
 	mgr.OnReceive(mbrb.HandleIncoming)
 
@@ -118,7 +118,7 @@ func main() {
 	if config.ShouldInitiate {
 		fmt.Printf("Initiating broadcast.\n")
 		metricsInstance.RecordInitTime()
-		mbrb.Broadcast("Hello")
+		mbrb.Broadcast([]byte("Hello"))
 	}
 
 	mgr.Wait() // Wait until manager signals done.

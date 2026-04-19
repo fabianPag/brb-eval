@@ -50,6 +50,10 @@ func (m *Manager) Run() {
 }
 
 func (m *Manager) Send(to core.NodeID, payload []byte) {
+	if to == m.id {
+		go m.handler(m.id, payload)
+		return
+	}
 	err := m.injector.ProcessSend(to, payload, m.transport)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to send to node %d: %v\n", to, err)
