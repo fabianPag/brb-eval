@@ -1,4 +1,10 @@
-package algorithm
+/*
+	Implementation of Raynal's version of Bracha's algorithm from the book "Fault-Tolerant Message-Passing Distributed Systems"
+	DOI: 10.1007/978-3-319-94141-7
+	https://link.springer.com/book/10.1007/978-3-319-94141-7
+*/
+
+package bracha
 
 import (
 	"brb-eval/internal/node/core"
