@@ -1,10 +1,10 @@
 /*
-	Single-shot implementation of MBRB algorithm from the paper "Asynchronous Byzantine reliable broadcast with a message adversary"
-	DOI: 10.48550/ARXIV.2205.09992
-https://arxiv.org/abs/2205.09992
+	Implementation of the AFRT MBRB algorithm from the paper "Asynchronous Byzantine reliable broadcast with a message adversary"
+	DOI: 10.1016/j.tcs.2023.114110
+	https://www.sciencedirect.com/science/article/abs/pii/S0304397523004231
 */
 
-package algorithm
+package afrt
 
 import (
 	"brb-eval/internal/node/core"
@@ -26,7 +26,7 @@ type MsgKey struct {
 	SeqNum    int
 }
 
-type MBRB2023 struct {
+type AFRT struct {
 	manager   core.Manager
 	mu        sync.Mutex
 	n         int
@@ -38,8 +38,8 @@ type MBRB2023 struct {
 	hasSigned map[MsgKey]bool
 }
 
-func NewMBRB2023(m core.Manager, t int, priv ed25519.PrivateKey, pubs map[core.NodeID]ed25519.PublicKey) *MBRB2023 {
-	return &MBRB2023{
+func NewAFRT(m core.Manager, t int, priv ed25519.PrivateKey, pubs map[core.NodeID]ed25519.PublicKey) *AFRT {
+	return &AFRT{
 		manager:   m,
 		n:         m.NumPeers(),
 		t:         t,
@@ -51,7 +51,7 @@ func NewMBRB2023(m core.Manager, t int, priv ed25519.PrivateKey, pubs map[core.N
 	}
 }
 
-func (b *MBRB2023) HandleIncoming(fromID core.NodeID, msg []byte) {
+func (b *AFRT) HandleIncoming(fromID core.NodeID, msg []byte) {
 	var bundle Bundle
 	if err := json.Unmarshal(msg, &bundle); err != nil {
 		fmt.Printf("[ERROR] Failed to unmarshal message from node %d: %v\n", fromID, err)
@@ -111,7 +111,7 @@ func (b *MBRB2023) HandleIncoming(fromID core.NodeID, msg []byte) {
 	}
 }
 
-func (b *MBRB2023) Broadcast(value string) {
+func (b *AFRT) Broadcast(value string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 
@@ -128,12 +128,12 @@ func (b *MBRB2023) Broadcast(value string) {
 	b.sendBundle(key, value)
 }
 
-func (b *MBRB2023) sign(value string, sn int, origin core.NodeID) []byte {
+func (b *AFRT) sign(value string, sn int, origin core.NodeID) []byte {
 	msg := fmt.Sprintf("%s|%d|%d", value, sn, origin)
 	return ed25519.Sign(b.privKey, []byte(msg))
 }
 
-func (b *MBRB2023) verify(value string, sn int, origin core.NodeID, signer core.NodeID, sig []byte) bool {
+func (b *AFRT) verify(value string, sn int, origin core.NodeID, signer core.NodeID, sig []byte) bool {
 	pub, ok := b.pubKeys[signer]
 	if !ok {
 		return false
@@ -142,7 +142,7 @@ func (b *MBRB2023) verify(value string, sn int, origin core.NodeID, signer core.
 	return ed25519.Verify(pub, []byte(msg), sig)
 }
 
-func (b *MBRB2023) sendBundle(key MsgKey, value string) {
+func (b *AFRT) sendBundle(key MsgKey, value string) {
 	bundle := Bundle{
 		Initiator: key.Initiator,
 		SeqNum:    key.SeqNum,

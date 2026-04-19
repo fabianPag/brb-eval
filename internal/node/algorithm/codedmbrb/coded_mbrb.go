@@ -1,3 +1,9 @@
+/*
+	Implementation of Coded-MBRB algorithm from the paper "Near-Optimal Communication Byzantine Reliable Broadcast Under a Message Adversary"
+	DOI: 10.4230/LIPIcs.OPODIS.2024.14
+	https://drops.dagstuhl.de/entities/document/10.4230/LIPIcs.OPODIS.2024.14
+*/
+
 package codedmbrb
 
 import (
