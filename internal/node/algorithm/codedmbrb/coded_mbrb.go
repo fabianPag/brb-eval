@@ -43,14 +43,15 @@ type CodedMBRB struct {
 	masterPubKey bn254.G2Affine
 	nodePubKeys  map[int]bn254.G2Affine
 
-	storedShares    map[string]map[int][]byte
-	storedFragments map[string]map[int][]byte
-	hasSentForward  map[string]bool
-	hasSentBundle   map[string]bool
-	savedThresh     map[string][]byte
-	hasDelivered    bool
-	hasSigned       bool
-	signedFor       string
+	storedShares      map[string]map[int][]byte
+	storedFragments   map[string]map[int][]byte
+	hasExecutedLine25 map[string]bool
+	hasSentForward    map[string]bool
+	hasSentBundle     map[string]bool
+	savedThresh       map[string][]byte
+	hasDelivered      bool
+	hasSigned         bool
+	signedFor         string
 }
 
 type MBRBMessage struct {
@@ -126,26 +127,27 @@ func NewCodedMBRB(m core.Manager, t int, d int, senderID int, publicCryptoParams
 	}
 
 	return &CodedMBRB{
-		manager:         m,
-		nodeIndex:       int(m.ID()),
-		senderID:        senderID,
-		n:               n,
-		t:               t,
-		k:               k,
-		parity:          parity,
-		d:               d,
-		tau:             tau,
-		rsEncoder:       rsEncoder,
-		pk:              pk,
-		vk:              vk,
-		privateShare:    privateShare,
-		masterPubKey:    masterPubKey,
-		nodePubKeys:     parsedNodePubKeys,
-		storedShares:    make(map[string]map[int][]byte),
-		storedFragments: make(map[string]map[int][]byte),
-		hasSentForward:  make(map[string]bool),
-		hasSentBundle:   make(map[string]bool),
-		savedThresh:     make(map[string][]byte),
+		manager:           m,
+		nodeIndex:         int(m.ID()),
+		senderID:          senderID,
+		n:                 n,
+		t:                 t,
+		k:                 k,
+		parity:            parity,
+		d:                 d,
+		tau:               tau,
+		rsEncoder:         rsEncoder,
+		pk:                pk,
+		vk:                vk,
+		privateShare:      privateShare,
+		masterPubKey:      masterPubKey,
+		nodePubKeys:       parsedNodePubKeys,
+		storedShares:      make(map[string]map[int][]byte),
+		storedFragments:   make(map[string]map[int][]byte),
+		hasExecutedLine25: make(map[string]bool),
+		hasSentForward:    make(map[string]bool),
+		hasSentBundle:     make(map[string]bool),
+		savedThresh:       make(map[string][]byte),
 	}
 }
 
@@ -317,7 +319,7 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	}
 
 	b.mu.Lock()
-	if b.hasSentForward[cKey] || (b.hasSigned && b.signedFor != cKey) {
+	if b.hasExecutedLine25[cKey] || b.hasSigned && b.signedFor != cKey {
 		b.mu.Unlock()
 		return
 	}
@@ -333,7 +335,7 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	}
 
 	b.mu.Lock()
-	if b.hasSentForward[cKey] || (b.hasSigned && b.signedFor != cKey) {
+	if b.hasExecutedLine25[cKey] || b.hasSigned && b.signedFor != cKey {
 		b.mu.Unlock()
 		return
 	}
@@ -359,6 +361,7 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	b.hasSentForward[cKey] = true
 	sharesForForward := b.cloneSignatures(msg.SignatureShares)
 	sharesForForward[b.nodeIndex] = append([]byte(nil), sigma_i...)
+	b.hasExecutedLine25[cKey] = true
 	b.mu.Unlock()
 
 	// Line 25: forall k in N, send <forward, C, \sigma_i, v, j, \pi_j>

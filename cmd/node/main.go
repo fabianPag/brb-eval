@@ -42,7 +42,7 @@ func main() {
 	dropNodes := flag.String("drop", "", "comma-separated list of node IDs to silently drop (e.g., '1,3')")
 	controllerAddr := flag.String("controller", "", "address of the controller")
 
-	pub, _, err := ed25519.GenerateKey(nil)
+	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
 		log.Fatal(err)
 	}
@@ -108,17 +108,19 @@ func main() {
 
 	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector, metricsInstance)
 
-	//bracha := algorithm.NewBracha(mgr)
-	mbrb := codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+	_ = priv
+	//brb := bracha.NewBracha(mgr)
+	brb := codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+	//brb := afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
 
-	mgr.OnReceive(mbrb.HandleIncoming)
+	mgr.OnReceive(brb.HandleIncoming)
 
 	go mgr.Run()
 
 	if config.ShouldInitiate {
 		fmt.Printf("Initiating broadcast.\n")
 		metricsInstance.RecordInitTime()
-		mbrb.Broadcast([]byte("Hello"))
+		brb.Broadcast([]byte("Hello"))
 	}
 
 	mgr.Wait() // Wait until manager signals done.

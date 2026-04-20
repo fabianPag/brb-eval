@@ -44,7 +44,7 @@ func (m *Manager) Run() {
 	for msg := range m.transport.Receive() {
 		if m.handler != nil {
 			m.metrics.RecordMessageRecieved(len(msg.Payload))
-			m.handler(msg.From, msg.Payload)
+			go m.handler(msg.From, msg.Payload)
 		}
 	}
 }
@@ -74,7 +74,7 @@ func (m *Manager) Broadcast(payload []byte) {
 }
 
 func (m *Manager) Deliver(initiator core.NodeID, value []byte) {
-	fmt.Printf("[DELIVER] From node %d: %s\n", initiator, string(value))
+	fmt.Printf("[DELIVER] From node %d\n", initiator)
 
 	m.metrics.RecordDelivery()
 	m.metrics.PrintMetrics()

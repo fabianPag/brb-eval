@@ -9,7 +9,7 @@ import (
 	"sync"
 )
 
-const MaxMessageSize = 1024 * 1024 // 1 MiB
+const MaxMessageSize = 10 * 1024 * 1024 // 10 MiB
 
 type PeerConn struct {
 	conn net.Conn
@@ -28,7 +28,7 @@ func NewTCPTransport(id core.NodeID) core.Transport {
 	return &TCPTransport{
 		id:       id,
 		peers:    make(map[core.NodeID]string),
-		recvChan: make(chan core.TransportMessage, 1000),
+		recvChan: make(chan core.TransportMessage),
 		conns:    make(map[core.NodeID]*PeerConn),
 	}
 }
@@ -64,7 +64,9 @@ func (t *TCPTransport) dialConn(id core.NodeID) {
 }
 
 func (t *TCPTransport) Send(toID core.NodeID, payload []byte) error {
+	t.mu.RLock()
 	pc, exists := t.conns[toID]
+	t.mu.RUnlock()
 
 	if !exists {
 		return fmt.Errorf("no active connection to peer %d", toID)
@@ -74,6 +76,8 @@ func (t *TCPTransport) Send(toID core.NodeID, payload []byte) error {
 	binary.BigEndian.PutUint32(packet[0:4], uint32(len(payload)))
 	copy(packet[4:], payload)
 
+	pc.mu.Lock()
+	defer pc.mu.Unlock()
 	_, err := pc.conn.Write(packet)
 
 	return err
@@ -160,6 +164,7 @@ func (t *TCPTransport) handleIncoming(conn net.Conn, peerID core.NodeID) {
 		}
 
 		if length > MaxMessageSize || length < 0 {
+			fmt.Println("Received message outside allowed size:", length)
 			return
 		}
 
