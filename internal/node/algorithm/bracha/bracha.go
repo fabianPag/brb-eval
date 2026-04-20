@@ -8,7 +8,8 @@ package bracha
 
 import (
 	"brb-eval/internal/node/core"
-	"encoding/json"
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"sync"
 )
@@ -22,10 +23,10 @@ const (
 )
 
 type Message struct {
-	Type      MsgType     `json:"type"`
-	Sender    core.NodeID `json:"sender"`
-	Initiator core.NodeID `json:"initiator"`
-	Value     []byte      `json:"value"`
+	Type      MsgType
+	Sender    core.NodeID
+	Initiator core.NodeID
+	Value     []byte
 }
 
 type BroadcastID struct {
@@ -62,15 +63,14 @@ func NewBracha(m core.Manager) *Bracha {
 
 func (b *Bracha) HandleIncoming(fromID core.NodeID, payload []byte) {
 	var msg Message
-	if err := json.Unmarshal(payload, &msg); err != nil {
-		fmt.Printf("[ERROR] Failed to unmarshal message from node %d: %v\n", fromID, err)
+	buf := bytes.NewReader(payload)
+	if err := gob.NewDecoder(buf).Decode(&msg); err != nil {
+		fmt.Printf("[ERROR] Failed to decode message from node %d: %v\n", fromID, err)
 		return
 	}
 	msg.Sender = fromID
 
 	key := BroadcastID{Initiator: msg.Initiator, Value: string(msg.Value)}
-
-	fmt.Printf("[RECEIVE] Type=%s Sender=%d Initiator=%d Value=%s\n", msg.Type, msg.Sender, msg.Initiator, msg.Value)
 
 	var doEcho, doReady, doDeliver bool
 
@@ -145,18 +145,15 @@ func (b *Bracha) HandleIncoming(fromID core.NodeID, payload []byte) {
 
 func (b *Bracha) broadcastMsg(msgType MsgType, initiator core.NodeID, value []byte) {
 	msg := Message{Type: msgType, Sender: b.manager.ID(), Initiator: initiator, Value: value}
-	data, err := json.Marshal(msg)
-	if err != nil {
-		fmt.Printf("[ERROR] Failed to marshal message type %s: %v\n", msgType, err)
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(msg); err != nil {
+		fmt.Printf("[ERROR] Failed to encode message type %s: %v\n", msgType, err)
 		return
 	}
+	data := buf.Bytes()
 	b.manager.Broadcast(data)
-	fmt.Printf("[BROADCAST] Type=%s Initiator=%d Value=%s\n", msg.Type, initiator, value)
-
-	b.HandleIncoming(b.manager.ID(), data) // "Deliver" same message to self
 }
 
 func (b *Bracha) InitiateBroadcast(valueToSend []byte) {
-	fmt.Printf("[INIT] Initiating broadcast with value: %s\n", valueToSend)
 	b.broadcastMsg(Init, b.manager.ID(), valueToSend)
 }

@@ -13,7 +13,7 @@ import (
 	"brb-eval/internal/node/core"
 	"bytes"
 	"encoding/binary"
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
 	"sync"
 
@@ -275,16 +275,18 @@ func (b *CodedMBRB) InitiateBroadcast(message []byte) {
 			Fragment:        &nf,
 			SignatureShares: safeSenderShares,
 		}
-		msgBytes, _ := json.Marshal(sendMsg)
-
-		// Send to node (Nodes in config are 0-indexed, j is 1-indexed)
-		go b.manager.Send(core.NodeID(j-1), msgBytes)
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(sendMsg); err == nil {
+			// Send to node (Nodes in config are 0-indexed, j is 1-indexed)
+			go b.manager.Send(core.NodeID(j-1), buf.Bytes())
+		}
 	}
 }
 
 func (b *CodedMBRB) HandleIncoming(fromID core.NodeID, payload []byte) {
 	var msg MBRBMessage
-	if err := json.Unmarshal(payload, &msg); err != nil {
+	buf := bytes.NewReader(payload)
+	if err := gob.NewDecoder(buf).Decode(&msg); err != nil {
 		return
 	}
 
@@ -371,9 +373,10 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 		Fragment:        msg.Fragment,
 		SignatureShares: sharesForForward,
 	}
-	msgBytes, _ := json.Marshal(forwardMsg)
-
-	b.manager.Broadcast(msgBytes)
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(forwardMsg); err == nil {
+		b.manager.Broadcast(buf.Bytes())
+	}
 }
 
 // Maps to Line 26: upon receiving <forward, C, \sigma_l, v, j, \pi_j> from node l
@@ -446,8 +449,10 @@ func (b *CodedMBRB) uponForwardArrival(msg *MBRBMessage) {
 			Fragment:        nil, // Sending sentinel value
 			SignatureShares: sharesForForward,
 		}
-		msgBytes, _ := json.Marshal(forwardMsg)
-		b.manager.Broadcast(msgBytes)
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(forwardMsg); err == nil {
+			b.manager.Broadcast(buf.Bytes())
+		}
 	}
 }
 
@@ -569,8 +574,10 @@ func (b *CodedMBRB) evaluateDelivery() {
 					BundleFragJ:        &fragJ,
 					ThresholdSignature: targetThreshSig,
 				}
-				msgBytes, _ := json.Marshal(bundleMsg)
-				go b.manager.Send(core.NodeID(j-1), msgBytes)
+				var buf bytes.Buffer
+				if err := gob.NewEncoder(&buf).Encode(bundleMsg); err == nil {
+					go b.manager.Send(core.NodeID(j-1), buf.Bytes())
+				}
 			}
 		}
 	}
@@ -659,8 +666,10 @@ func (b *CodedMBRB) uponBundleArrival(msg *MBRBMessage) {
 			BundleFragJ:        nil,
 			ThresholdSignature: msg.ThresholdSignature,
 		}
-		msgBytes, _ := json.Marshal(forwardBundle)
-		b.manager.Broadcast(msgBytes)
+		var buf bytes.Buffer
+		if err := gob.NewEncoder(&buf).Encode(forwardBundle); err == nil {
+			b.manager.Broadcast(buf.Bytes())
+		}
 	}
 }
 

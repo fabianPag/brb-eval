@@ -66,9 +66,6 @@ func (m *Manager) Send(to core.NodeID, payload []byte) {
 func (m *Manager) Broadcast(payload []byte) {
 	for i := 0; i < m.transport.NumPeers(); i++ {
 		peerID := core.NodeID(i)
-		if peerID == m.id {
-			continue
-		}
 		go m.Send(peerID, payload)
 	}
 }

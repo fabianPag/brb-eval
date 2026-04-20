@@ -8,17 +8,18 @@ package afrt
 
 import (
 	"brb-eval/internal/node/core"
+	"bytes"
 	"crypto/ed25519"
-	"encoding/json"
+	"encoding/gob"
 	"fmt"
 	"sync"
 )
 
 type Bundle struct {
-	Initiator core.NodeID            `json:"initiator"`
-	SeqNum    int                    `json:"sn"`
-	Value     []byte                 `json:"val"`
-	Sigs      map[core.NodeID][]byte `json:"sigs"`
+	Initiator core.NodeID
+	SeqNum    int
+	Value     []byte
+	Sigs      map[core.NodeID][]byte
 }
 
 type MsgKey struct {
@@ -59,10 +60,11 @@ func NewAFRT(m core.Manager, t int, d int, priv ed25519.PrivateKey, pubs map[cor
 	}
 }
 
-func (b *AFRT) HandleIncoming(fromID core.NodeID, msg []byte) {
+func (b *AFRT) HandleIncoming(fromID core.NodeID, payload []byte) {
 	var bundle Bundle
-	if err := json.Unmarshal(msg, &bundle); err != nil {
-		fmt.Printf("[ERROR] Failed to unmarshal message from node %d: %v\n", fromID, err)
+	buf := bytes.NewReader(payload)
+	if err := gob.NewDecoder(buf).Decode(&bundle); err != nil {
+		fmt.Printf("[ERROR] Failed to decode bundle message from node %d: %v\n", fromID, err)
 		return
 	}
 
@@ -197,6 +199,12 @@ func (b *AFRT) sendBundle(key MsgKey, value []byte, sigs map[core.NodeID][]byte)
 		Value:     value,
 		Sigs:      sigs,
 	}
-	data, _ := json.Marshal(bundle)
+	var buf bytes.Buffer
+	if err := gob.NewEncoder(&buf).Encode(bundle); err != nil {
+		fmt.Printf("[ERROR] Failed to encode bundle message: %v\n", err)
+		return
+	}
+	data := buf.Bytes()
+
 	b.manager.Broadcast(data)
 }
