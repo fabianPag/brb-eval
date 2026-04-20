@@ -238,9 +238,10 @@ func (b *CodedMBRB) verifyShardProof(C kzg.Digest, shard []byte, pi_j kzg.Openin
 }
 
 // Maps to Line 17: function MBRBbroadcast(m)
-func (b *CodedMBRB) Broadcast(message []byte) error {
+func (b *CodedMBRB) InitiateBroadcast(message []byte) {
 	if b.nodeIndex != b.senderID {
-		return fmt.Errorf("only designated sender %d can broadcast", b.senderID)
+		fmt.Printf("only designated sender %d can broadcast", b.senderID)
+		return
 	}
 
 	// Frame the message with a 4-byte length prefix
@@ -250,14 +251,14 @@ func (b *CodedMBRB) Broadcast(message []byte) error {
 	// Line 18: <C, {\tilde{m}_i}, {\pi_i}> = computeFragVecCommit(m)
 	C, fragments, err := b.computeFragVecCommit(framedMessage)
 	if err != nil {
-		return err
+		return
 	}
 
 	cSerializer := C.Marshal()
 	// Line 19
 	senderSig, err := ts.SignShare(cSerializer, b.privateShare)
 	if err != nil {
-		return err
+		return
 	}
 	senderShares := map[int][]byte{b.senderID: senderSig}
 
@@ -279,8 +280,6 @@ func (b *CodedMBRB) Broadcast(message []byte) error {
 		// Send to node (Nodes in config are 0-indexed, j is 1-indexed)
 		go b.manager.Send(core.NodeID(j-1), msgBytes)
 	}
-
-	return nil
 }
 
 func (b *CodedMBRB) HandleIncoming(fromID core.NodeID, payload []byte) {

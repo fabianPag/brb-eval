@@ -153,7 +153,7 @@ func (b *AFRT) HandleIncoming(fromID core.NodeID, msg []byte) {
 	}
 }
 
-func (b *AFRT) Broadcast(value []byte) {
+func (b *AFRT) InitiateBroadcast(value []byte) {
 	const sn = 0 // hardcoded for single-shot implementation
 
 	key := MsgKey{Initiator: b.manager.ID(), SeqNum: sn}

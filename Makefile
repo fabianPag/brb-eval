@@ -1,4 +1,5 @@
 PEERS ?= 4
+ALGORITHM ?= codedmbrb
 
 build:
 	@mkdir -p ./bin
@@ -11,5 +12,5 @@ clean:
 
 sim: clean build
 	@mkdir -p ./sim
-	./scripts/generate_shadow_config.sh $(PEERS) sim/shadow.yaml
+	./scripts/generate_shadow_config.sh $(PEERS) sim/shadow.yaml $(ALGORITHM)
 	cd ./sim && shadow shadow.yaml

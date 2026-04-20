@@ -2,6 +2,8 @@ package main
 
 import (
 	"brb-eval/internal/controller/api"
+	"brb-eval/internal/node/algorithm/afrt"
+	"brb-eval/internal/node/algorithm/bracha"
 	"brb-eval/internal/node/algorithm/codedmbrb"
 	"brb-eval/internal/node/core"
 	"brb-eval/internal/node/fault"
@@ -50,7 +52,7 @@ func main() {
 	flag.Parse()
 
 	if *nodeID < 0 || *nodeAddr == "" || *controllerAddr == "" {
-		fmt.Println("Usage: node -id=<id> -addr=<host:port> -controller=<host:port>")
+		fmt.Println("Usage: node -id=<id> -addr=<host:port> -controller=<host:port> [-algo=<algorithm>]")
 		os.Exit(1)
 	}
 
@@ -93,7 +95,7 @@ func main() {
 		fmt.Printf("[ERROR] Failed to wait for start signal: %v\n", err)
 		os.Exit(1)
 	}
-	fmt.Printf("Received start signal. Starting algorithm.\n")
+	fmt.Printf("Received start signal. Starting %s.\n", config.Algorithm)
 
 	droppedMap := parseDroppedNodes(*dropNodes)
 	var injector fault.Injector
@@ -108,19 +110,32 @@ func main() {
 
 	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector, metricsInstance)
 
-	_ = priv
-	//brb := bracha.NewBracha(mgr)
-	brb := codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
-	//brb := afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
+	type brbAlgorithm interface {
+		HandleIncoming(core.NodeID, []byte)
+		InitiateBroadcast([]byte)
+	}
+
+	var brb brbAlgorithm
+	selectedAlgorithm := strings.ToLower(config.Algorithm)
+	switch selectedAlgorithm {
+	case "bracha":
+		brb = bracha.NewBracha(mgr)
+	case "afrt":
+		brb = afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
+	case "codedmbrb":
+		brb = codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+	default:
+		fmt.Printf("[ERROR] Unknown algorithm: %s. Available options: bracha, codedmbrb, afrt\n", selectedAlgorithm)
+		os.Exit(1)
+	}
 
 	mgr.OnReceive(brb.HandleIncoming)
-
 	go mgr.Run()
 
 	if config.ShouldInitiate {
-		fmt.Printf("Initiating broadcast.\n")
+		fmt.Printf("Initiating broadcast using %s algorithm.\n", selectedAlgorithm)
 		metricsInstance.RecordInitTime()
-		brb.Broadcast([]byte("Hello"))
+		brb.InitiateBroadcast([]byte("Hello"))
 	}
 
 	mgr.Wait() // Wait until manager signals done.

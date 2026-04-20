@@ -2,9 +2,11 @@
 
 NUM_PEERS=${1}
 OUTPUT_FILE=${2}
+ALGORITHM=${3}
 
 if [ -z "$NUM_PEERS" ] || [ -z "$OUTPUT_FILE" ]; then
-  echo "Usage: $0 <num_peers> <output_file>"
+  echo "Usage: $0 <num_peers> <output_file> [algorithm"
+  echo "Algorithms: bracha, afrt, codedmbrb"
   exit 1
 fi
 
@@ -21,7 +23,7 @@ hosts:
     network_node_id: 0
     processes:
     - path: ../bin/controller
-      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS"
+      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM"
       start_time: 0s
       expected_final_state: running
 EOF

@@ -156,7 +156,7 @@ func (b *Bracha) broadcastMsg(msgType MsgType, initiator core.NodeID, value []by
 	b.HandleIncoming(b.manager.ID(), data) // "Deliver" same message to self
 }
 
-func (b *Bracha) Broadcast(valueToSend []byte) {
+func (b *Bracha) InitiateBroadcast(valueToSend []byte) {
 	fmt.Printf("[INIT] Initiating broadcast with value: %s\n", valueToSend)
 	b.broadcastMsg(Init, b.manager.ID(), valueToSend)
 }
