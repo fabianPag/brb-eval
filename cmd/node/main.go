@@ -143,7 +143,12 @@ func main() {
 		brb.InitiateBroadcast(payload)
 	}
 
-	mgr.Wait() // Wait until manager signals done.
+	mgr.Wait() // Wait until manager signals delivery.
+
+	fmt.Println("[INFO] Signaling delivered. Waiting for controller to signal other nodes have delivered...")
+	if err := signalDeliveredAndWait(*controllerAddr, *nodeID); err != nil {
+		fmt.Printf("[ERROR] Failed to wait for network delivered signal: %v\n", err)
+	}
 
 	metricsResults := metricsInstance.GetMetrics()
 
@@ -161,7 +166,9 @@ func main() {
 		fmt.Printf("[ERROR] Failed to send metrics: %v\n", err)
 	}
 
-	select {}
+	metricsInstance.PrintMetrics()
+
+	os.Exit(0)
 }
 
 func sendMetrics(controllerAddr string, data api.MetricsData) error {
@@ -219,6 +226,26 @@ func waitForStart(controllerURL string, id int) error {
 
 	client := &http.Client{
 		Timeout: time.Second * 10,
+	}
+
+	resp, err := client.Get(url)
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
+	}
+
+	return nil
+}
+
+func signalDeliveredAndWait(controllerURL string, id int) error {
+	url := fmt.Sprintf("http://%s/delivered?id=%d", controllerURL, id)
+
+	client := &http.Client{
+		Timeout: 0,
 	}
 
 	resp, err := client.Get(url)

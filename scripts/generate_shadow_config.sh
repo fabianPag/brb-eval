@@ -25,9 +25,10 @@ hosts:
     processes:
     - path: ../bin/controller
       args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE"
-      start_time: 0s
+      start_time: 0s 
       expected_final_state: running
 EOF
+
 
 for (( i=0; i<$NUM_PEERS; i++ ))
 do
@@ -39,6 +40,6 @@ do
     - path: ../bin/node
       args: "-id=$i -addr=peer$i:8080 -controller=controller:9000"
       start_time: 1s
-      expected_final_state: running
+      expected_final_state: {exited: 0}
 EOF
 done

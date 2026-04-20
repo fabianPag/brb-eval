@@ -8,7 +8,9 @@ import (
 	"net/http"
 	"os"
 	"strconv"
+	"strings"
 	"sync"
+	"time"
 
 	"brb-eval/internal/controller/api"
 
@@ -25,28 +27,40 @@ type Controller struct {
 	d                   int
 	algorithm           string
 	payloadSize         int
+	requiredDeliveries  int
 	registeredNodes     map[int]api.PeerInfo
 	readyNodes          map[int]bool
 	nodeMetrics         map[int]api.MetricsData
+	nodesDelivered      map[int]bool
 	allRegistered       chan struct{}
 	allReady            chan struct{}
 	publicCryptoParams  api.PublicCryptoParams
 	privateCryptoParams map[int]api.PrivateCryptoParams
+	allDelivered        chan struct{}
 }
 
 func New(targetNodes int, t int, d int, algorithm string, payloadSize int) *Controller {
+	required := targetNodes - t - d
+
+	if strings.ToLower(algorithm) == "bracha" {
+		required = targetNodes - t
+	}
+
 	return &Controller{
-		targetNodes:      targetNodes,
-		designatedSender: 0,
-		t:                t,
-		d:                d,
-		algorithm:        algorithm,
-		payloadSize:      payloadSize,
-		registeredNodes:  make(map[int]api.PeerInfo),
-		readyNodes:       make(map[int]bool),
-		nodeMetrics:      make(map[int]api.MetricsData),
-		allRegistered:    make(chan struct{}),
-		allReady:         make(chan struct{}),
+		targetNodes:        targetNodes,
+		designatedSender:   0,
+		t:                  t,
+		d:                  d,
+		algorithm:          algorithm,
+		payloadSize:        payloadSize,
+		requiredDeliveries: required,
+		registeredNodes:    make(map[int]api.PeerInfo),
+		readyNodes:         make(map[int]bool),
+		nodesDelivered:     make(map[int]bool),
+		nodeMetrics:        make(map[int]api.MetricsData),
+		allRegistered:      make(chan struct{}),
+		allReady:           make(chan struct{}),
+		allDelivered:       make(chan struct{}),
 	}
 }
 
@@ -55,9 +69,42 @@ func (c *Controller) Run(addr string) error {
 
 	http.HandleFunc("/register", c.handleRegister)
 	http.HandleFunc("/ready", c.handleReady)
+	http.HandleFunc("/delivered", c.handleDelivered)
 	http.HandleFunc("/metrics", c.handleMetrics)
 	fmt.Println("Starting controller at", addr)
 	return http.ListenAndServe(addr, nil)
+}
+
+func (c *Controller) handleDelivered(w http.ResponseWriter, r *http.Request) {
+	idStr := r.URL.Query().Get("id")
+	id, err := strconv.Atoi(idStr)
+	if err != nil {
+		http.Error(w, "Invalid ID", http.StatusBadRequest)
+		return
+	}
+
+	c.mu.Lock()
+
+	if !c.nodesDelivered[id] {
+		c.nodesDelivered[id] = true
+		fmt.Printf("Node %d has delivered\n", id)
+
+		if len(c.nodesDelivered) == c.requiredDeliveries {
+			fmt.Println("All nodes have delivered. Waiting for 3 seconds to let any in-flight algorithm messages arrive.")
+			go func() {
+				time.Sleep(3 * time.Second)
+				fmt.Println("Unblocking all nodes.")
+				close(c.allDelivered)
+			}()
+		}
+	}
+
+	c.mu.Unlock()
+
+	// Block until all nodes have delivered
+	<-c.allDelivered
+
+	w.WriteHeader(http.StatusOK)
 }
 
 func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
