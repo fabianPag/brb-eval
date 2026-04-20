@@ -24,6 +24,7 @@ type Controller struct {
 	t                   int
 	d                   int
 	algorithm           string
+	payloadSize         int
 	registeredNodes     map[int]api.PeerInfo
 	readyNodes          map[int]bool
 	nodeMetrics         map[int]api.MetricsData
@@ -33,13 +34,14 @@ type Controller struct {
 	privateCryptoParams map[int]api.PrivateCryptoParams
 }
 
-func New(targetNodes int, t int, d int, algorithm string) *Controller {
+func New(targetNodes int, t int, d int, algorithm string, payloadSize int) *Controller {
 	return &Controller{
 		targetNodes:      targetNodes,
 		designatedSender: 0,
 		t:                t,
 		d:                d,
 		algorithm:        algorithm,
+		payloadSize:      payloadSize,
 		registeredNodes:  make(map[int]api.PeerInfo),
 		readyNodes:       make(map[int]bool),
 		nodeMetrics:      make(map[int]api.MetricsData),
@@ -132,6 +134,7 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 		PublicCryptoParams:  c.publicCryptoParams,
 		PrivateCryptoParams: c.privateCryptoParams[node.ID],
 		Algorithm:           c.algorithm,
+		PayloadSize:         c.payloadSize,
 	}
 
 	w.Header().Set("Content-Type", "application/json")

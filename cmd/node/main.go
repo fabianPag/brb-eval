@@ -12,6 +12,7 @@ import (
 	"brb-eval/internal/node/transport"
 	"bytes"
 	"crypto/ed25519"
+	"crypto/rand"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -52,7 +53,7 @@ func main() {
 	flag.Parse()
 
 	if *nodeID < 0 || *nodeAddr == "" || *controllerAddr == "" {
-		fmt.Println("Usage: node -id=<id> -addr=<host:port> -controller=<host:port> [-algo=<algorithm>]")
+		fmt.Println("Usage: node -id=<id> -addr=<host:port> -controller=<host:port>")
 		os.Exit(1)
 	}
 
@@ -133,9 +134,13 @@ func main() {
 	go mgr.Run()
 
 	if config.ShouldInitiate {
-		fmt.Printf("Initiating broadcast using %s algorithm.\n", selectedAlgorithm)
+		payload := make([]byte, config.PayloadSize)
+		rand.Read(payload)
+
+		fmt.Printf("Initiating broadcast of %d byte payload.\n", config.PayloadSize)
 		metricsInstance.RecordInitTime()
-		brb.InitiateBroadcast([]byte("Hello"))
+
+		brb.InitiateBroadcast(payload)
 	}
 
 	mgr.Wait() // Wait until manager signals done.

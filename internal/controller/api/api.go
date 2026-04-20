@@ -33,6 +33,7 @@ type Config struct {
 	PublicCryptoParams  PublicCryptoParams  `json:"public_crypto_params"`
 	PrivateCryptoParams PrivateCryptoParams `json:"private_crypto_params"`
 	Algorithm           string              `json:"algorithm"`
+	PayloadSize         int                 `json:"payload_size"`
 }
 
 type MetricsData struct {

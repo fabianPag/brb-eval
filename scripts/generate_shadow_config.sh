@@ -3,6 +3,7 @@
 NUM_PEERS=${1}
 OUTPUT_FILE=${2}
 ALGORITHM=${3}
+PAYLOADSIZE=${4}
 
 if [ -z "$NUM_PEERS" ] || [ -z "$OUTPUT_FILE" ]; then
   echo "Usage: $0 <num_peers> <output_file> [algorithm"
@@ -23,7 +24,7 @@ hosts:
     network_node_id: 0
     processes:
     - path: ../bin/controller
-      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM"
+      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE"
       start_time: 0s
       expected_final_state: running
 EOF

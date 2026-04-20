@@ -12,10 +12,11 @@ func main() {
 	targetNodes := flag.Int("targetNodes", -1, "Amount of nodes before allowing p2p network start")
 	tFlag := flag.Int("t", -1, "Number of malicious nodes")
 	dFlag := flag.Int("d", 0, "Number of nodes affected by message adversary")
-	algorithmFlag := flag.String("algorithm", "codembrb", "Algorithm used (bracha, afrt, codedmbrb)")
+	algorithmFlag := flag.String("algorithm", "codedmbrb", "Algorithm used (bracha, afrt, codedmbrb)")
+	payloadSize := flag.Int("payloadSize", 1024, "Size of payload to broadcast in bytes")
 	flag.Parse()
 	if *targetNodes <= 0 || *listenAddr == "" {
-		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>]")
+		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<bytes>]")
 		os.Exit(1)
 	}
 
@@ -25,7 +26,7 @@ func main() {
 		t = (*targetNodes - 2*d - 1) / 3
 	}
 
-	contr := controller.New(*targetNodes, t, d, *algorithmFlag)
+	contr := controller.New(*targetNodes, t, d, *algorithmFlag, *payloadSize)
 	err := contr.Run(*listenAddr)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)
