@@ -1,6 +1,8 @@
 PEERS ?= 4
 ALGORITHM ?= codedmbrb
 PAYLOADSIZE ?= 1024
+T ?= 0
+D ?= 0
 
 build:
 	@mkdir -p ./bin
@@ -13,5 +15,5 @@ clean:
 
 sim: clean build
 	@mkdir -p ./sim
-	./scripts/generate_shadow_config.sh $(PEERS) sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE)
+	./scripts/generate_shadow_config.sh $(PEERS) sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D)
 	cd ./sim && shadow shadow.yaml

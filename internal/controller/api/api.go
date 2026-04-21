@@ -26,7 +26,7 @@ type PrivateCryptoParams struct {
 
 type Config struct {
 	Peers               map[int]PeerInfo    `json:"peers"`
-	ShouldInitiate      bool                `json:"should_initiate"`
+	Role                string              `json:"role"` // "honest", "muted", "crashed"
 	DesignatedSender    int                 `json:"designated_sender"`
 	T                   int                 `json:"t"`
 	D                   int                 `json:"d"`
@@ -38,6 +38,7 @@ type Config struct {
 
 type MetricsData struct {
 	NodeID            int       `json:"node_id"`
+	Role              string    `json:"role"`
 	FirstMessageTime  time.Time `json:"first_message_time"`
 	DeliveryTime      time.Time `json:"delivery_time"`
 	TotalMessagesRecv int64     `json:"total_messages_recv"`

@@ -2,27 +2,23 @@ package manager
 
 import (
 	"brb-eval/internal/node/core"
-	"brb-eval/internal/node/fault"
 	"fmt"
 )
 
 type Manager struct {
 	id        core.NodeID
 	transport core.Transport
-	injector  fault.Injector
+	role      string
 	handler   core.MessageHandler
 	metrics   core.Metrics
 	done      chan struct{}
 }
 
-func New(id core.NodeID, transport core.Transport, injector fault.Injector, metrics core.Metrics) *Manager {
-	if injector == nil {
-		injector = &fault.PassThroughInjector{}
-	}
+func New(id core.NodeID, transport core.Transport, role string, metrics core.Metrics) *Manager {
 	return &Manager{
 		id:        id,
 		transport: transport,
-		injector:  injector,
+		role:      role,
 		metrics:   metrics,
 		done:      make(chan struct{}),
 	}
@@ -42,6 +38,10 @@ func (m *Manager) OnReceive(handler core.MessageHandler) {
 
 func (m *Manager) Run() {
 	for msg := range m.transport.Receive() {
+		if m.role != "honest" {
+			continue
+		}
+
 		if m.handler != nil {
 			m.metrics.RecordMessageRecieved(len(msg.Payload))
 			go m.handler(msg.From, msg.Payload)
@@ -50,11 +50,15 @@ func (m *Manager) Run() {
 }
 
 func (m *Manager) Send(to core.NodeID, payload []byte) {
+	if m.role == "crashed" {
+		return
+	}
+
 	if to == m.id {
 		go m.handler(m.id, payload)
 		return
 	}
-	err := m.injector.ProcessSend(to, payload, m.transport)
+	err := m.transport.Send(to, payload)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to send to node %d: %v\n", to, err)
 		return

@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"os"
 	"strconv"
-	"strings"
 	"sync"
 	"time"
 
@@ -28,39 +27,34 @@ type Controller struct {
 	algorithm           string
 	payloadSize         int
 	requiredDeliveries  int
+	nodeMetrics         []api.MetricsData
 	registeredNodes     map[int]api.PeerInfo
 	readyNodes          map[int]bool
-	nodeMetrics         map[int]api.MetricsData
-	nodesDelivered      map[int]bool
+	metricsReceived     map[int]bool
+	doneNodes           map[int]bool
 	allRegistered       chan struct{}
 	allReady            chan struct{}
 	publicCryptoParams  api.PublicCryptoParams
 	privateCryptoParams map[int]api.PrivateCryptoParams
-	allDelivered        chan struct{}
+	allDone             chan struct{}
 }
 
 func New(targetNodes int, t int, d int, algorithm string, payloadSize int) *Controller {
-	required := targetNodes - t - d
-
-	if strings.ToLower(algorithm) == "bracha" {
-		required = targetNodes - t
-	}
-
 	return &Controller{
-		targetNodes:        targetNodes,
-		designatedSender:   0,
-		t:                  t,
-		d:                  d,
-		algorithm:          algorithm,
-		payloadSize:        payloadSize,
-		requiredDeliveries: required,
-		registeredNodes:    make(map[int]api.PeerInfo),
-		readyNodes:         make(map[int]bool),
-		nodesDelivered:     make(map[int]bool),
-		nodeMetrics:        make(map[int]api.MetricsData),
-		allRegistered:      make(chan struct{}),
-		allReady:           make(chan struct{}),
-		allDelivered:       make(chan struct{}),
+		targetNodes:      targetNodes,
+		designatedSender: 0,
+		t:                t,
+		d:                d,
+		algorithm:        algorithm,
+		payloadSize:      payloadSize,
+		nodeMetrics:      make([]api.MetricsData, targetNodes),
+		registeredNodes:  make(map[int]api.PeerInfo),
+		readyNodes:       make(map[int]bool),
+		doneNodes:        make(map[int]bool),
+		metricsReceived:  make(map[int]bool),
+		allRegistered:    make(chan struct{}),
+		allReady:         make(chan struct{}),
+		allDone:          make(chan struct{}),
 	}
 }
 
@@ -69,13 +63,13 @@ func (c *Controller) Run(addr string) error {
 
 	http.HandleFunc("/register", c.handleRegister)
 	http.HandleFunc("/ready", c.handleReady)
-	http.HandleFunc("/delivered", c.handleDelivered)
+	http.HandleFunc("/done", c.handleDone)
 	http.HandleFunc("/metrics", c.handleMetrics)
 	fmt.Println("Starting controller at", addr)
 	return http.ListenAndServe(addr, nil)
 }
 
-func (c *Controller) handleDelivered(w http.ResponseWriter, r *http.Request) {
+func (c *Controller) handleDone(w http.ResponseWriter, r *http.Request) {
 	idStr := r.URL.Query().Get("id")
 	id, err := strconv.Atoi(idStr)
 	if err != nil {
@@ -85,16 +79,16 @@ func (c *Controller) handleDelivered(w http.ResponseWriter, r *http.Request) {
 
 	c.mu.Lock()
 
-	if !c.nodesDelivered[id] {
-		c.nodesDelivered[id] = true
-		fmt.Printf("Node %d has delivered\n", id)
+	if !c.doneNodes[id] {
+		c.doneNodes[id] = true
+		fmt.Printf("Node %d is done\n", id)
 
-		if len(c.nodesDelivered) == c.requiredDeliveries {
-			fmt.Println("All nodes have delivered. Waiting for 3 seconds to let any in-flight algorithm messages arrive.")
+		if len(c.doneNodes) == c.targetNodes {
+			fmt.Println("All nodes done. Waiting for 3 seconds to let any in-flight algorithm messages arrive.")
 			go func() {
 				time.Sleep(3 * time.Second)
 				fmt.Println("Unblocking all nodes.")
-				close(c.allDelivered)
+				close(c.allDone)
 			}()
 		}
 	}
@@ -102,7 +96,7 @@ func (c *Controller) handleDelivered(w http.ResponseWriter, r *http.Request) {
 	c.mu.Unlock()
 
 	// Block until all nodes have delivered
-	<-c.allDelivered
+	<-c.allDone
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -114,10 +108,15 @@ func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if metrics.NodeID < 0 || metrics.NodeID >= c.targetNodes {
+		http.Error(w, "Invalid Node ID", http.StatusBadRequest)
+		return
+	}
+
 	c.mu.Lock()
 	c.nodeMetrics[metrics.NodeID] = metrics
-	receivedCount := len(c.nodeMetrics)
-	allReceived := receivedCount == c.targetNodes
+	c.metricsReceived[metrics.NodeID] = true
+	allReceived := len(c.metricsReceived) == c.targetNodes
 	c.mu.Unlock()
 
 	fmt.Printf("Node %d sent metrics\n", metrics.NodeID)
@@ -169,12 +168,24 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 		<-c.allRegistered
 	}
 
+	numHonest := c.targetNodes - c.t - c.d
+	numMuted := c.d
+
+	var role string
+	if node.ID < numHonest || node.ID == c.designatedSender {
+		role = "honest"
+	} else if node.ID < (numHonest + numMuted) {
+		role = "muted"
+	} else {
+		role = "crashed"
+	}
+
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
 	config := api.Config{
 		Peers:               c.registeredNodes,
-		ShouldInitiate:      node.ID == c.designatedSender,
+		Role:                role,
 		DesignatedSender:    c.designatedSender,
 		T:                   c.t,
 		D:                   c.d,
@@ -210,6 +221,7 @@ func (c *Controller) handleReady(w http.ResponseWriter, r *http.Request) {
 
 		if len(c.readyNodes) == c.targetNodes {
 			fmt.Println("All nodes ready. Unblocking.")
+			fmt.Printf("Starting algorithm %s with %d nodes, t=%d, d=%d\n", c.algorithm, c.targetNodes, c.t, c.d)
 			close(c.allReady)
 		}
 	}

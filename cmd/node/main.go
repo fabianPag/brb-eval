@@ -6,7 +6,6 @@ import (
 	"brb-eval/internal/node/algorithm/bracha"
 	"brb-eval/internal/node/algorithm/codedmbrb"
 	"brb-eval/internal/node/core"
-	"brb-eval/internal/node/fault"
 	"brb-eval/internal/node/manager"
 	"brb-eval/internal/node/metrics"
 	"brb-eval/internal/node/transport"
@@ -19,30 +18,13 @@ import (
 	"log"
 	"net/http"
 	"os"
-	"strconv"
 	"strings"
 	"time"
 )
 
-func parseDroppedNodes(rawDrop string) map[core.NodeID]bool {
-	dropped := make(map[core.NodeID]bool)
-	if rawDrop == "" {
-		return dropped
-	}
-	parts := strings.Split(rawDrop, ",")
-	for _, p := range parts {
-		id, err := strconv.Atoi(strings.TrimSpace(p))
-		if err == nil {
-			dropped[core.NodeID(id)] = true
-		}
-	}
-	return dropped
-}
-
 func main() {
 	nodeID := flag.Int("id", -1, "this node's ID")
 	nodeAddr := flag.String("addr", "", "this nodes host:port")
-	dropNodes := flag.String("drop", "", "comma-separated list of node IDs to silently drop (e.g., '1,3')")
 	controllerAddr := flag.String("controller", "", "address of the controller")
 
 	pub, priv, err := ed25519.GenerateKey(nil)
@@ -98,18 +80,11 @@ func main() {
 	}
 	fmt.Printf("Received start signal. Starting %s.\n", config.Algorithm)
 
-	droppedMap := parseDroppedNodes(*dropNodes)
-	var injector fault.Injector
-	if len(droppedMap) > 0 {
-		fmt.Printf("[INFO] Simulating silent churn. Dropping messages to nodes: %v\n", *dropNodes)
-		injector = fault.NewChurnInjector(droppedMap)
-	} else {
-		injector = &fault.PassThroughInjector{}
-	}
-
 	metricsInstance := metrics.New()
 
-	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, injector, metricsInstance)
+	fmt.Println("Acting as role:", config.Role)
+
+	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, config.Role, metricsInstance)
 
 	type brbAlgorithm interface {
 		HandleIncoming(core.NodeID, []byte)
@@ -133,7 +108,7 @@ func main() {
 	mgr.OnReceive(brb.HandleIncoming)
 	go mgr.Run()
 
-	if config.ShouldInitiate {
+	if config.DesignatedSender == *nodeID {
 		payload := make([]byte, config.PayloadSize)
 		rand.Read(payload)
 
@@ -143,10 +118,12 @@ func main() {
 		brb.InitiateBroadcast(payload)
 	}
 
-	mgr.Wait() // Wait until manager signals delivery.
+	if config.Role == "honest" {
+		mgr.Wait() // Wait until manager signals delivery.
+	}
 
-	fmt.Println("[INFO] Signaling delivered. Waiting for controller to signal other nodes have delivered...")
-	if err := signalDeliveredAndWait(*controllerAddr, *nodeID); err != nil {
+	fmt.Println("[INFO] Signaling done. Waiting for controller to signal other nodes are done...")
+	if err := signalDoneAndWait(*controllerAddr, *nodeID); err != nil {
 		fmt.Printf("[ERROR] Failed to wait for network delivered signal: %v\n", err)
 	}
 
@@ -154,6 +131,7 @@ func main() {
 
 	metricsData := api.MetricsData{
 		NodeID:            *nodeID,
+		Role:              config.Role,
 		FirstMessageTime:  metricsResults.FirstMessageTime,
 		DeliveryTime:      metricsResults.DeliveryTime,
 		TotalMessagesRecv: metricsResults.TotalMessagesRecv,
@@ -205,7 +183,7 @@ func registerWithController(controllerAddr string, nodeAddr string, nodeID int, 
 	}
 
 	client := &http.Client{
-		Timeout: time.Second * 10,
+		Timeout: time.Minute,
 	}
 	resp, err := client.Post("http://"+controllerAddr+"/register", "application/json", bytes.NewReader(body))
 	if err != nil {
@@ -225,7 +203,7 @@ func waitForStart(controllerURL string, id int) error {
 	url := fmt.Sprintf("http://%s/ready?id=%d", controllerURL, id)
 
 	client := &http.Client{
-		Timeout: time.Second * 10,
+		Timeout: time.Minute,
 	}
 
 	resp, err := client.Get(url)
@@ -241,8 +219,8 @@ func waitForStart(controllerURL string, id int) error {
 	return nil
 }
 
-func signalDeliveredAndWait(controllerURL string, id int) error {
-	url := fmt.Sprintf("http://%s/delivered?id=%d", controllerURL, id)
+func signalDoneAndWait(controllerURL string, id int) error {
+	url := fmt.Sprintf("http://%s/done?id=%d", controllerURL, id)
 
 	client := &http.Client{
 		Timeout: 0,
