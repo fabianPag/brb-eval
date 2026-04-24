@@ -130,14 +130,14 @@ func main() {
 	metricsResults := metricsInstance.GetMetrics()
 
 	metricsData := api.MetricsData{
-		NodeID:            *nodeID,
-		Role:              config.Role,
-		FirstMessageTime:  metricsResults.FirstMessageTime,
-		DeliveryTime:      metricsResults.DeliveryTime,
-		TotalMessagesRecv: metricsResults.TotalMessagesRecv,
-		TotalBytesRecv:    metricsResults.TotalBytesRecv,
-		TotalMessagesSent: metricsResults.TotalMessagesSent,
-		TotalBytesSent:    metricsResults.TotalBytesSent,
+		NodeID:           *nodeID,
+		Role:             config.Role,
+		FirstMessageTime: metricsResults.FirstMessageTime,
+		DeliveryTime:     metricsResults.DeliveryTime,
+		MessagesReceived: metricsResults.MessagesReceived,
+		BytesReceived:    metricsResults.BytesReceived,
+		MessagesSent:     metricsResults.MessagesSent,
+		BytesSent:        metricsResults.BytesSent,
 	}
 
 	if err := sendMetrics(*controllerAddr, metricsData); err != nil {

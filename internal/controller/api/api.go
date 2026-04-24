@@ -37,12 +37,12 @@ type Config struct {
 }
 
 type MetricsData struct {
-	NodeID            int       `json:"node_id"`
-	Role              string    `json:"role"`
-	FirstMessageTime  time.Time `json:"first_message_time"`
-	DeliveryTime      time.Time `json:"delivery_time"`
-	TotalMessagesRecv int64     `json:"total_messages_recv"`
-	TotalBytesRecv    int64     `json:"total_bytes_recv"`
-	TotalMessagesSent int64     `json:"total_messages_sent"`
-	TotalBytesSent    int64     `json:"total_bytes_sent"`
+	NodeID           int       `json:"node_id"`
+	Role             string    `json:"role"`
+	FirstMessageTime time.Time `json:"first_message_time"`
+	DeliveryTime     time.Time `json:"delivery_time"`
+	MessagesReceived int64     `json:"messages_received"`
+	BytesReceived    int64     `json:"bytes_received"`
+	MessagesSent     int64     `json:"messages_sent"`
+	BytesSent        int64     `json:"bytes_sent"`
 }

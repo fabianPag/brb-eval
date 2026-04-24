@@ -43,7 +43,7 @@ func (m *Manager) Run() {
 		}
 
 		if m.handler != nil {
-			m.metrics.RecordMessageRecieved(len(msg.Payload))
+			m.metrics.RecordMessageReceived(len(msg.Payload))
 			go m.handler(msg.From, msg.Payload)
 		}
 	}

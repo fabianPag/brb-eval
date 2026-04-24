@@ -33,6 +33,6 @@ type Metrics interface {
 	RecordInitTime()
 	RecordDelivery()
 	RecordMessageSent(payloadSize int)
-	RecordMessageRecieved(payloadSize int)
+	RecordMessageReceived(payloadSize int)
 	PrintMetrics()
 }

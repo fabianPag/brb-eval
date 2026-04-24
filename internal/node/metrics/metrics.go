@@ -7,12 +7,12 @@ import (
 )
 
 type Metrics struct {
-	firstMessageTime  atomic.Int64
-	deliveryTime      atomic.Int64
-	totalMessagesRecv atomic.Int64
-	totalBytesRecv    atomic.Int64
-	totalMessagesSent atomic.Int64
-	totalBytesSent    atomic.Int64
+	firstMessageTime atomic.Int64
+	deliveryTime     atomic.Int64
+	messagesReceived atomic.Int64
+	bytesReceived    atomic.Int64
+	messagesSent     atomic.Int64
+	bytesSent        atomic.Int64
 }
 
 func New() *Metrics {
@@ -30,13 +30,13 @@ func (m *Metrics) RecordDelivery() {
 }
 
 func (m *Metrics) RecordMessageSent(payloadSize int) {
-	m.totalMessagesSent.Add(1)
-	m.totalBytesSent.Add(int64(payloadSize))
+	m.messagesSent.Add(1)
+	m.bytesSent.Add(int64(payloadSize))
 }
 
-func (m *Metrics) RecordMessageRecieved(payloadSize int) {
-	m.totalMessagesRecv.Add(1)
-	m.totalBytesRecv.Add(int64(payloadSize))
+func (m *Metrics) RecordMessageReceived(payloadSize int) {
+	m.messagesReceived.Add(1)
+	m.bytesReceived.Add(int64(payloadSize))
 
 	if m.firstMessageTime.Load() == 0 {
 		now := time.Now().UnixNano()
@@ -64,19 +64,19 @@ func (m *Metrics) PrintMetrics() {
 		fmt.Println("Time to Deliver:", delTime.Sub(firstTime).String())
 	}
 
-	fmt.Println("Total Messages Received:", m.totalMessagesRecv.Load())
-	fmt.Println("Total Bytes Received:", m.totalBytesRecv.Load())
-	fmt.Println("Total Messages Sent:", m.totalMessagesSent.Load())
-	fmt.Println("Total Bytes Sent:", m.totalBytesSent.Load())
+	fmt.Println("Total Messages Received:", m.messagesReceived.Load())
+	fmt.Println("Total Bytes Received:", m.bytesReceived.Load())
+	fmt.Println("Total Messages Sent:", m.messagesSent.Load())
+	fmt.Println("Total Bytes Sent:", m.bytesSent.Load())
 }
 
 type MetricsResults struct {
-	FirstMessageTime  time.Time
-	DeliveryTime      time.Time
-	TotalMessagesRecv int64
-	TotalBytesRecv    int64
-	TotalMessagesSent int64
-	TotalBytesSent    int64
+	FirstMessageTime time.Time
+	DeliveryTime     time.Time
+	MessagesReceived int64
+	BytesReceived    int64
+	MessagesSent     int64
+	BytesSent        int64
 }
 
 func (m *Metrics) GetMetrics() MetricsResults {
@@ -84,10 +84,10 @@ func (m *Metrics) GetMetrics() MetricsResults {
 	delNano := m.deliveryTime.Load()
 
 	res := MetricsResults{
-		TotalMessagesRecv: m.totalMessagesRecv.Load(),
-		TotalBytesRecv:    m.totalBytesRecv.Load(),
-		TotalMessagesSent: m.totalMessagesSent.Load(),
-		TotalBytesSent:    m.totalBytesSent.Load(),
+		MessagesReceived: m.messagesReceived.Load(),
+		BytesReceived:    m.bytesReceived.Load(),
+		MessagesSent:     m.messagesSent.Load(),
+		BytesSent:        m.bytesSent.Load(),
 	}
 
 	if firstNano != 0 {
