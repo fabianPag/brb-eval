@@ -69,7 +69,7 @@ func New(targetNodes int, t int, d int, algorithm string, payloadSize int) *Cont
 	}
 }
 
-func (c *Controller) Run(addr string) error {
+func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
 	c.InitializeCrypto(c.targetNodes, c.t)
 
 	http.HandleFunc("/register", c.handleRegister)
@@ -81,8 +81,10 @@ func (c *Controller) Run(addr string) error {
 	go http.ListenAndServe(addr, nil)
 	<-c.allMetricsReceived
 
-	if err := c.saveMetricsToFile("metrics.json"); err != nil {
-		fmt.Printf("[ERROR] Failed to save metrics: %v\n", err)
+	if shouldSaveMetrics {
+		if err := c.saveMetricsToFile("metrics.json"); err != nil {
+			fmt.Printf("[ERROR] Failed to save metrics: %v\n", err)
+		}
 	}
 
 	return nil

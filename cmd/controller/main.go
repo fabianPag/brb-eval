@@ -14,9 +14,10 @@ func main() {
 	dFlag := flag.Int("d", 0, "Number of nodes affected by message adversary")
 	algorithmFlag := flag.String("algorithm", "codedmbrb", "Algorithm used (bracha, afrt, codedmbrb)")
 	payloadSize := flag.Int("payloadSize", 1024, "Size of payload to broadcast in bytes")
+	saveMetrics := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
 	flag.Parse()
 	if *targetNodes <= 0 || *listenAddr == "" {
-		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<bytes>]")
+		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<bytes>] [-saveMetrics=<true|false>]")
 		os.Exit(1)
 	}
 
@@ -27,7 +28,7 @@ func main() {
 	}
 
 	contr := controller.New(*targetNodes, t, d, *algorithmFlag, *payloadSize)
-	err := contr.Run(*listenAddr)
+	err := contr.Run(*listenAddr, *saveMetrics)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)
 		os.Exit(1)
