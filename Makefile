@@ -11,9 +11,9 @@ build:
 
 clean:
 	rm -rf ./bin
-	rm -rf ./sim
+	rm -rf ./evaluations/sim
 
 sim: clean build
-	@mkdir -p ./sim
-	./scripts/generate_shadow_config.sh $(PEERS) sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D)
-	cd ./sim && shadow shadow.yaml
+	@mkdir -p ./evaluations/sim
+	./evaluations/scripts/sim/generate_shadow_config.sh $(PEERS) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D)
+	cd ./evaluations/sim && shadow shadow.yaml

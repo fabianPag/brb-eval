@@ -1,3 +1,4 @@
-sim/
+evaluations/sim/
+evaluations/results/
 bin/
 .idea
