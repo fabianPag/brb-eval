@@ -28,7 +28,7 @@ hosts:
     - path: ../bin/controller
       args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D" 
       start_time: 0s 
-      expected_final_state: running
+      expected_final_state: {exited: 0}
 EOF
 
 for (( i=0; i<$NUM_PEERS; i++ ))

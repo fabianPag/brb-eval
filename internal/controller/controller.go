@@ -37,24 +37,35 @@ type Controller struct {
 	publicCryptoParams  api.PublicCryptoParams
 	privateCryptoParams map[int]api.PrivateCryptoParams
 	allDone             chan struct{}
+	allMetricsReceived  chan struct{}
+}
+
+type metricsFile struct {
+	Algorithm   string            `json:"algorithm"`
+	PayloadSize int               `json:"payload_size"`
+	N           int               `json:"n"`
+	T           int               `json:"t"`
+	D           int               `json:"d"`
+	NodeMetrics []api.MetricsData `json:"node_metrics"`
 }
 
 func New(targetNodes int, t int, d int, algorithm string, payloadSize int) *Controller {
 	return &Controller{
-		targetNodes:      targetNodes,
-		designatedSender: 0,
-		t:                t,
-		d:                d,
-		algorithm:        algorithm,
-		payloadSize:      payloadSize,
-		nodeMetrics:      make([]api.MetricsData, targetNodes),
-		registeredNodes:  make(map[int]api.PeerInfo),
-		readyNodes:       make(map[int]bool),
-		doneNodes:        make(map[int]bool),
-		metricsReceived:  make(map[int]bool),
-		allRegistered:    make(chan struct{}),
-		allReady:         make(chan struct{}),
-		allDone:          make(chan struct{}),
+		targetNodes:        targetNodes,
+		designatedSender:   0,
+		t:                  t,
+		d:                  d,
+		algorithm:          algorithm,
+		payloadSize:        payloadSize,
+		nodeMetrics:        make([]api.MetricsData, targetNodes),
+		registeredNodes:    make(map[int]api.PeerInfo),
+		readyNodes:         make(map[int]bool),
+		doneNodes:          make(map[int]bool),
+		metricsReceived:    make(map[int]bool),
+		allRegistered:      make(chan struct{}),
+		allReady:           make(chan struct{}),
+		allDone:            make(chan struct{}),
+		allMetricsReceived: make(chan struct{}),
 	}
 }
 
@@ -66,7 +77,15 @@ func (c *Controller) Run(addr string) error {
 	http.HandleFunc("/done", c.handleDone)
 	http.HandleFunc("/metrics", c.handleMetrics)
 	fmt.Println("Starting controller at", addr)
-	return http.ListenAndServe(addr, nil)
+
+	go http.ListenAndServe(addr, nil)
+	<-c.allMetricsReceived
+
+	if err := c.saveMetricsToFile("metrics.json"); err != nil {
+		fmt.Printf("[ERROR] Failed to save metrics: %v\n", err)
+	}
+
+	return nil
 }
 
 func (c *Controller) handleDone(w http.ResponseWriter, r *http.Request) {
@@ -121,19 +140,26 @@ func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
 
 	fmt.Printf("Node %d sent metrics\n", metrics.NodeID)
 
-	if allReceived {
-		if err := c.saveMetricsToFile("metrics.json"); err != nil {
-			fmt.Printf("[ERROR] Failed to save metrics: %v\n", err)
-		}
-	}
-
 	w.WriteHeader(http.StatusOK)
+
+	if allReceived {
+		close(c.allMetricsReceived)
+	}
 }
 
 func (c *Controller) saveMetricsToFile(filename string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	data, err := json.MarshalIndent(c.nodeMetrics, "", "  ")
+	output := metricsFile{
+		Algorithm:   c.algorithm,
+		PayloadSize: c.payloadSize,
+		N:           c.targetNodes,
+		T:           c.t,
+		D:           c.d,
+		NodeMetrics: c.nodeMetrics,
+	}
+
+	data, err := json.MarshalIndent(output, "", "  ")
 	if err != nil {
 		return err
 	}
