@@ -9,8 +9,6 @@ import (
 	"sync"
 )
 
-const MaxMessageSize = 10 * 1024 * 1024 // 10 MiB
-
 type PeerConn struct {
 	conn net.Conn
 	mu   sync.Mutex
@@ -163,8 +161,8 @@ func (t *TCPTransport) handleIncoming(conn net.Conn, peerID core.NodeID) {
 			return
 		}
 
-		if length > MaxMessageSize || length < 0 {
-			fmt.Println("Received message outside allowed size:", length)
+		if length < 0 {
+			fmt.Println("Received message with invalid size:", length)
 			return
 		}
 
