@@ -6,10 +6,12 @@ ALGORITHM=${3}
 PAYLOADSIZE=${4}
 T=${5:-0}
 D=${6:-0}
+TWINSSENDER=${7:-false}
 
 if [ -z "$NUM_PEERS" ] || [ -z "$OUTPUT_FILE" ]; then
-  echo "Usage: $0 <num_peers> <output_file> <algorithm> <payload_size> [t] [d]"
+  echo "Usage: $0 <num_peers> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender]"
   echo "Algorithms: bracha, afrt, codedmbrb"
+  echo "Twins_sender: true, false"
   exit 1
 fi
 
@@ -26,8 +28,8 @@ hosts:
     network_node_id: 0
     processes:
     - path: ../../bin/controller
-      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D" 
-      start_time: 0s 
+      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D -twinsSender=$TWINSSENDER"
+      start_time: 0s
       expected_final_state: {exited: 0}
 EOF
 

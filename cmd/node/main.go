@@ -92,32 +92,74 @@ func main() {
 	}
 
 	var brb brbAlgorithm
-	selectedAlgorithm := strings.ToLower(config.Algorithm)
-	switch selectedAlgorithm {
-	case "bracha":
-		brb = bracha.NewBracha(mgr)
-	case "afrt":
-		brb = afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
-	case "codedmbrb":
-		brb = codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
-	default:
-		fmt.Printf("[ERROR] Unknown algorithm: %s. Available options: bracha, codedmbrb, afrt\n", selectedAlgorithm)
-		os.Exit(1)
-	}
+	isTwinsSender := config.Role == "twins_sender" && config.DesignatedSender == *nodeID
+	if isTwinsSender {
+		fmt.Println("Twins sender, splitting network")
+		numPeers := mgr.NumPeers()
+		partitionMid := core.NodeID(numPeers / 2)
 
-	mgr.OnReceive(brb.HandleIncoming)
-	go mgr.Run()
+		p1Manager := manager.NewSplitManager(mgr, 0, partitionMid)
+		p2Manager := manager.NewSplitManager(mgr, partitionMid, core.NodeID(numPeers))
+		var brb1, brb2 brbAlgorithm
+		selectedAlgorithm := strings.ToLower(config.Algorithm)
+		switch selectedAlgorithm {
+		case "bracha":
+			brb1 = bracha.NewBracha(p1Manager)
+			brb2 = bracha.NewBracha(p2Manager)
+		case "afrt":
+			brb1 = afrt.NewAFRT(p1Manager, config.T, config.D, priv, publicKeys)
+			brb2 = afrt.NewAFRT(p2Manager, config.T, config.D, priv, publicKeys)
+		case "codedmbrb":
+			brb1 = codedmbrb.NewCodedMBRB(p1Manager, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+			brb2 = codedmbrb.NewCodedMBRB(p2Manager, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+		default:
+			fmt.Printf("[ERROR] Unknown algorithm: %s. Available options: bracha, codedmbrb, afrt\n", selectedAlgorithm)
+			os.Exit(1)
+		}
+		mgr.OnReceive(func(from core.NodeID, payload []byte) {
+			if from >= partitionMid {
+				go brb2.HandleIncoming(from, payload)
+			} else {
+				go brb1.HandleIncoming(from, payload)
+			}
+		})
+		go mgr.Run()
+		payload1 := make([]byte, config.PayloadSize)
+		rand.Read(payload1)
 
-	if config.DesignatedSender == *nodeID {
-		payload := make([]byte, config.PayloadSize)
-		rand.Read(payload)
-
-		fmt.Printf("Initiating broadcast of %d byte payload.\n", config.PayloadSize)
+		payload2 := make([]byte, config.PayloadSize)
+		rand.Read(payload2)
 		metricsInstance.RecordInitTime()
 
-		brb.InitiateBroadcast(payload)
-	}
+		brb1.InitiateBroadcast(payload1)
+		brb2.InitiateBroadcast(payload2)
+	} else {
+		selectedAlgorithm := strings.ToLower(config.Algorithm)
+		switch selectedAlgorithm {
+		case "bracha":
+			brb = bracha.NewBracha(mgr)
+		case "afrt":
+			brb = afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
+		case "codedmbrb":
+			brb = codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+		default:
+			fmt.Printf("[ERROR] Unknown algorithm: %s. Available options: bracha, codedmbrb, afrt\n", selectedAlgorithm)
+			os.Exit(1)
+		}
 
+		mgr.OnReceive(brb.HandleIncoming)
+		go mgr.Run()
+
+		if config.DesignatedSender == *nodeID {
+			payload := make([]byte, config.PayloadSize)
+			rand.Read(payload)
+
+			fmt.Printf("Initiating broadcast of %d byte payload.\n", config.PayloadSize)
+			metricsInstance.RecordInitTime()
+
+			brb.InitiateBroadcast(payload)
+		}
+	}
 	if config.Role == "honest" {
 		mgr.Wait() // Wait until manager signals delivery.
 	}

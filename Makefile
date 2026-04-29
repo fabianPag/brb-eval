@@ -3,6 +3,7 @@ ALGORITHM ?= codedmbrb
 PAYLOADSIZE ?= 1024
 T ?= 0
 D ?= 0
+TWINSSENDER ?= false
 
 build:
 	@mkdir -p ./bin
@@ -15,5 +16,5 @@ clean:
 
 sim: clean build
 	@mkdir -p ./evaluations/sim
-	./evaluations/scripts/sim/generate_shadow_config.sh $(PEERS) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D)
+	./evaluations/scripts/sim/generate_shadow_config.sh $(PEERS) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D) $(TWINSSENDER)
 	cd ./evaluations/sim && shadow shadow.yaml

@@ -15,6 +15,7 @@ func main() {
 	algorithmFlag := flag.String("algorithm", "codedmbrb", "Algorithm used (bracha, afrt, codedmbrb)")
 	payloadSize := flag.Int("payloadSize", 1024, "Size of payload to broadcast in bytes")
 	saveMetrics := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
+	twinsSender := flag.Bool("twinsSender", false, "Enable Twins sender mode")
 	flag.Parse()
 	if *targetNodes <= 0 || *listenAddr == "" {
 		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<bytes>] [-saveMetrics=<true|false>]")
@@ -27,7 +28,7 @@ func main() {
 		t = (*targetNodes - 2*d - 1) / 3
 	}
 
-	contr := controller.New(*targetNodes, t, d, *algorithmFlag, *payloadSize)
+	contr := controller.New(*targetNodes, t, d, *algorithmFlag, *payloadSize, *twinsSender)
 	err := contr.Run(*listenAddr, *saveMetrics)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)

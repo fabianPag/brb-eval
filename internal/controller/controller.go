@@ -38,6 +38,7 @@ type Controller struct {
 	privateCryptoParams map[int]api.PrivateCryptoParams
 	allDone             chan struct{}
 	allMetricsReceived  chan struct{}
+	twinsSender         bool
 }
 
 type metricsFile struct {
@@ -49,7 +50,7 @@ type metricsFile struct {
 	NodeMetrics []api.MetricsData `json:"node_metrics"`
 }
 
-func New(targetNodes int, t int, d int, algorithm string, payloadSize int) *Controller {
+func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool) *Controller {
 	return &Controller{
 		targetNodes:        targetNodes,
 		designatedSender:   0,
@@ -66,6 +67,7 @@ func New(targetNodes int, t int, d int, algorithm string, payloadSize int) *Cont
 		allReady:           make(chan struct{}),
 		allDone:            make(chan struct{}),
 		allMetricsReceived: make(chan struct{}),
+		twinsSender:        twinsSender,
 	}
 }
 
@@ -199,13 +201,21 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 	numHonest := c.targetNodes - c.t - c.d
 	numMuted := c.d
 
-	var role string
-	if node.ID < numHonest || node.ID == c.designatedSender {
-		role = "honest"
-	} else if node.ID < (numHonest + numMuted) {
-		role = "muted"
+	role := "honest"
+	if node.ID == c.designatedSender {
+		if c.twinsSender {
+			role = "twins_sender"
+		} else {
+			role = "honest"
+		}
 	} else {
-		role = "crashed"
+		if node.ID < numHonest {
+			role = "honest"
+		} else if node.ID < (numHonest + numMuted) {
+			role = "muted"
+		} else {
+			role = "crashed"
+		}
 	}
 
 	c.mu.Lock()
