@@ -1,5 +1,7 @@
 package core
 
+import "time"
+
 type NodeID int32
 
 type Manager interface {
@@ -10,7 +12,7 @@ type Manager interface {
 	NumPeers() int
 	Deliver(initiator NodeID, value []byte)
 	Run()
-	Wait()
+	WaitForDelivery(timeout time.Duration) bool
 }
 
 type TransportMessage struct {

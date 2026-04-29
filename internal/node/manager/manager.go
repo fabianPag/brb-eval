@@ -3,6 +3,7 @@ package manager
 import (
 	"brb-eval/internal/node/core"
 	"fmt"
+	"time"
 )
 
 type Manager struct {
@@ -38,7 +39,7 @@ func (m *Manager) OnReceive(handler core.MessageHandler) {
 
 func (m *Manager) Run() {
 	for msg := range m.transport.Receive() {
-		if m.role != "honest" {
+		if m.role == "silent" || m.role == "isolated" {
 			continue
 		}
 
@@ -50,7 +51,7 @@ func (m *Manager) Run() {
 }
 
 func (m *Manager) Send(to core.NodeID, payload []byte) {
-	if m.role == "crashed" {
+	if m.role == "silent" {
 		return
 	}
 
@@ -80,6 +81,12 @@ func (m *Manager) Deliver(initiator core.NodeID, value []byte) {
 	m.done <- struct{}{}
 }
 
-func (m *Manager) Wait() {
-	<-m.done
+func (m *Manager) WaitForDelivery(timeout time.Duration) bool {
+	select {
+	case <-m.done:
+		return true
+	case <-time.After(timeout):
+		fmt.Println("Timed out waiting for delivery")
+		return false
+	}
 }

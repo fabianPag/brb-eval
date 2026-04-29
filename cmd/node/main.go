@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"flag"
 	"fmt"
-	"log"
 	"net/http"
 	"os"
 	"strings"
@@ -29,7 +28,8 @@ func main() {
 
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		log.Fatal(err)
+		fmt.Println("[ERROR] Failed to generate key pair:", err)
+		os.Exit(1)
 	}
 
 	flag.Parse()
@@ -160,8 +160,10 @@ func main() {
 			brb.InitiateBroadcast(payload)
 		}
 	}
+
+	delivered := false
 	if config.Role == "honest" {
-		mgr.Wait() // Wait until manager signals delivery.
+		delivered = mgr.WaitForDelivery(30 * time.Second) // Wait until manager signals delivery or timeout after 30 seconds. Optimized towards Shadow, feel free to change lol
 	}
 
 	fmt.Println("[INFO] Signaling done. Waiting for controller to signal other nodes are done...")
@@ -174,6 +176,7 @@ func main() {
 	metricsData := api.MetricsData{
 		NodeID:           *nodeID,
 		Role:             config.Role,
+		Delivered:        delivered,
 		FirstMessageTime: metricsResults.FirstMessageTime,
 		DeliveryTime:     metricsResults.DeliveryTime,
 		MessagesReceived: metricsResults.MessagesReceived,

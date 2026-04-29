@@ -4,14 +4,15 @@ NUM_PEERS=${1}
 OUTPUT_FILE=${2}
 ALGORITHM=${3}
 PAYLOADSIZE=${4}
-T=${5:-0}
+T=${5:--1}
 D=${6:-0}
 TWINSSENDER=${7:-false}
+NUMSILENT=${8:-0}
+NUMISOLATED=${9:-0}
 
 if [ -z "$NUM_PEERS" ] || [ -z "$OUTPUT_FILE" ]; then
-  echo "Usage: $0 <num_peers> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender]"
+  echo "Usage: $0 <num_peers> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_isolated]"
   echo "Algorithms: bracha, afrt, codedmbrb"
-  echo "Twins_sender: true, false"
   exit 1
 fi
 
@@ -28,8 +29,8 @@ hosts:
     network_node_id: 0
     processes:
     - path: ../../bin/controller
-      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D -twinsSender=$TWINSSENDER"
-      start_time: 0s
+      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D -twinsSender=$TWINSSENDER -numSilent=$NUMSILENT -numIsolated=$NUMISOLATED"
+      start_time: 0s 
       expected_final_state: {exited: 0}
 EOF
 

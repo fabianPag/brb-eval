@@ -24,6 +24,8 @@ type Controller struct {
 	designatedSender    int
 	t                   int
 	d                   int
+	numSilent           int
+	numIsolated         int
 	algorithm           string
 	payloadSize         int
 	requiredDeliveries  int
@@ -47,15 +49,19 @@ type metricsFile struct {
 	N           int               `json:"n"`
 	T           int               `json:"t"`
 	D           int               `json:"d"`
+	NumSilent   int               `json:"num_silent"`
+	NumIsolated int               `json:"num_isolated"`
 	NodeMetrics []api.MetricsData `json:"node_metrics"`
 }
 
-func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool) *Controller {
+func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool, numSilent int, numIsolated int) *Controller {
 	return &Controller{
 		targetNodes:        targetNodes,
 		designatedSender:   0,
 		t:                  t,
 		d:                  d,
+		numSilent:          numSilent,
+		numIsolated:        numIsolated,
 		algorithm:          algorithm,
 		payloadSize:        payloadSize,
 		nodeMetrics:        make([]api.MetricsData, targetNodes),
@@ -72,7 +78,7 @@ func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twins
 }
 
 func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
-	c.InitializeCrypto(c.targetNodes, c.t)
+	c.InitializeCrypto(c.targetNodes)
 
 	http.HandleFunc("/register", c.handleRegister)
 	http.HandleFunc("/ready", c.handleReady)
@@ -160,6 +166,8 @@ func (c *Controller) saveMetricsToFile(filename string) error {
 		N:           c.targetNodes,
 		T:           c.t,
 		D:           c.d,
+		NumSilent:   c.numSilent,
+		NumIsolated: c.numIsolated,
 		NodeMetrics: c.nodeMetrics,
 	}
 
@@ -198,9 +206,6 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 		<-c.allRegistered
 	}
 
-	numHonest := c.targetNodes - c.t - c.d
-	numMuted := c.d
-
 	role := "honest"
 	if node.ID == c.designatedSender {
 		if c.twinsSender {
@@ -209,12 +214,10 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 			role = "honest"
 		}
 	} else {
-		if node.ID < numHonest {
-			role = "honest"
-		} else if node.ID < (numHonest + numMuted) {
-			role = "muted"
-		} else {
-			role = "crashed"
+		if int(node.ID) >= c.targetNodes-c.numSilent {
+			role = "silent"
+		} else if int(node.ID) >= c.targetNodes-c.numSilent-c.numIsolated {
+			role = "isolated"
 		}
 	}
 
@@ -349,10 +352,10 @@ func (c *Controller) SetupKZG(n int) ([]byte, []byte) {
 	return pkBuf.Bytes(), vkBuf.Bytes()
 }
 
-func (c *Controller) InitializeCrypto(n int, t int) {
+func (c *Controller) InitializeCrypto(n int) {
 	pkBytes, vkBytes := c.SetupKZG(n)
 
-	blsShares, masterPubKeyBytes, nodePubKeysBytes, err := SetupBLSThreshold(n, t)
+	blsShares, masterPubKeyBytes, nodePubKeysBytes, err := SetupBLSThreshold(n, c.t)
 	if err != nil {
 		panic(err)
 	}
