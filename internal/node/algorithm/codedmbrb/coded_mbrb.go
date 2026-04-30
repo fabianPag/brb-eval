@@ -294,9 +294,9 @@ func (b *CodedMBRB) HandleIncoming(fromID core.NodeID, payload []byte) {
 	case "SEND":
 		b.uponSendArrival(fromID, &msg)
 	case "FORWARD":
-		b.uponForwardArrival(&msg)
+		b.uponForwardArrival(fromID, &msg)
 	case "BUNDLE":
-		b.uponBundleArrival(&msg)
+		b.uponBundleArrival(fromID, &msg)
 	}
 
 	b.evaluateDelivery()
@@ -312,6 +312,13 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	cKey := string(msg.Commitment)
 
 	if int(from) != b.senderID {
+		return
+	}
+	if msg.Initiator != b.senderID {
+		return
+	}
+
+	if msg.Fragment.Index != b.nodeIndex+1 {
 		return
 	}
 
@@ -330,7 +337,7 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	if err := deserializeProof(&pi_j, msg.Fragment.Proof); err != nil {
 		return
 	}
-	// Line 22: if has_sent_forward = false and isValid(C, v, pi_j)
+	// Line 22: if not has executed line 25 and isValid(C, v, pi_j)
 	if !b.verifyShardProof(C, msg.Fragment.Data, pi_j, msg.Fragment.Index) {
 		return
 	}
@@ -380,24 +387,37 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 }
 
 // Maps to Line 26: upon receiving <forward, C, \sigma_l, v, j, \pi_j> from node l
-func (b *CodedMBRB) uponForwardArrival(msg *MBRBMessage) {
+func (b *CodedMBRB) uponForwardArrival(from core.NodeID, msg *MBRBMessage) {
 	var C kzg.Digest
-	if err := C.Unmarshal(msg.Commitment); err != nil || msg.Fragment == nil {
+	if err := C.Unmarshal(msg.Commitment); err != nil {
 		return
 	}
 
 	cKey := string(msg.Commitment)
+	if msg.Initiator != b.senderID {
+		return
+	}
 
 	if !b.validateShareSet(msg.Commitment, msg.SignatureShares) {
 		return
 	}
 
-	var pi_j kzg.OpeningProof
-	if err := deserializeProof(&pi_j, msg.Fragment.Proof); err != nil {
+	if _, ok := msg.SignatureShares[int(from)]; !ok {
 		return
 	}
-	if !b.verifyShardProof(C, msg.Fragment.Data, pi_j, msg.Fragment.Index) {
-		return
+
+	if msg.Fragment != nil {
+		if msg.Fragment.Index != int(from)+1 {
+			return
+		}
+
+		var pi_j kzg.OpeningProof
+		if err := deserializeProof(&pi_j, msg.Fragment.Proof); err != nil {
+			return
+		}
+		if !b.verifyShardProof(C, msg.Fragment.Data, pi_j, msg.Fragment.Index) {
+			return
+		}
 	}
 
 	b.mu.Lock()
@@ -413,10 +433,12 @@ func (b *CodedMBRB) uponForwardArrival(msg *MBRBMessage) {
 		b.storedShares[cKey][signerID] = append([]byte(nil), sig...)
 	}
 
-	if b.storedFragments[cKey] == nil {
-		b.storedFragments[cKey] = make(map[int][]byte)
+	if msg.Fragment != nil {
+		if b.storedFragments[cKey] == nil {
+			b.storedFragments[cKey] = make(map[int][]byte)
+		}
+		b.storedFragments[cKey][msg.Fragment.Index] = append([]byte(nil), msg.Fragment.Data...)
 	}
-	b.storedFragments[cKey][msg.Fragment.Index] = append([]byte(nil), msg.Fragment.Data...)
 
 	shouldSendSentinel := false
 	var sigma_i []byte
@@ -425,8 +447,8 @@ func (b *CodedMBRB) uponForwardArrival(msg *MBRBMessage) {
 		if err == nil {
 			sigma_i = sig
 			shouldSendSentinel = true
+			b.hasSentForward[cKey] = true
 		}
-		b.hasSentForward[cKey] = true
 	}
 
 	b.mu.Unlock()
@@ -589,7 +611,7 @@ func (b *CodedMBRB) evaluateDelivery() {
 }
 
 // Maps to Line 42: upon receiving <bundle, C, E_C, \sigma>
-func (b *CodedMBRB) uponBundleArrival(msg *MBRBMessage) {
+func (b *CodedMBRB) uponBundleArrival(from core.NodeID, msg *MBRBMessage) {
 	b.mu.Lock()
 	hasDelivered := b.hasDelivered
 	b.mu.Unlock()
@@ -599,6 +621,9 @@ func (b *CodedMBRB) uponBundleArrival(msg *MBRBMessage) {
 	}
 
 	cKey := string(msg.Commitment)
+	if msg.Initiator != b.senderID {
+		return
+	}
 
 	// Line 43: Validate threshold signature
 	if !ts.Verify(msg.Commitment, msg.ThresholdSignature, b.masterPubKey) {
@@ -612,6 +637,9 @@ func (b *CodedMBRB) uponBundleArrival(msg *MBRBMessage) {
 
 	validI := false
 	if msg.BundleFragI != nil {
+		if msg.BundleFragI.Index != int(from)+1 {
+			return
+		}
 		var pi kzg.OpeningProof
 		if err := deserializeProof(&pi, msg.BundleFragI.Proof); err == nil {
 			validI = b.verifyShardProof(C, msg.BundleFragI.Data, pi, msg.BundleFragI.Index)
@@ -620,6 +648,9 @@ func (b *CodedMBRB) uponBundleArrival(msg *MBRBMessage) {
 
 	validJ := false
 	if msg.BundleFragJ != nil {
+		if msg.BundleFragJ.Index != b.nodeIndex+1 {
+			return
+		}
 		var pi kzg.OpeningProof
 		if err := deserializeProof(&pi, msg.BundleFragJ.Proof); err == nil {
 			validJ = b.verifyShardProof(C, msg.BundleFragJ.Data, pi, msg.BundleFragJ.Index)
