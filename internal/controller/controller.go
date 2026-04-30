@@ -44,14 +44,15 @@ type Controller struct {
 }
 
 type metricsFile struct {
-	Algorithm   string            `json:"algorithm"`
-	PayloadSize int               `json:"payload_size"`
-	N           int               `json:"n"`
-	T           int               `json:"t"`
-	D           int               `json:"d"`
-	NumSilent   int               `json:"num_silent"`
-	NumIsolated int               `json:"num_isolated"`
-	NodeMetrics []api.MetricsData `json:"node_metrics"`
+	Algorithm        string            `json:"algorithm"`
+	PayloadSize      int               `json:"payload_size"`
+	N                int               `json:"n"`
+	T                int               `json:"t"`
+	D                int               `json:"d"`
+	DesignatedSender int               `json:"designated_sender"`
+	NumSilent        int               `json:"num_silent"`
+	NumIsolated      int               `json:"num_isolated"`
+	NodeMetrics      []api.MetricsData `json:"node_metrics"`
 }
 
 func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool, numSilent int, numIsolated int) *Controller {
@@ -161,14 +162,15 @@ func (c *Controller) saveMetricsToFile(filename string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	output := metricsFile{
-		Algorithm:   c.algorithm,
-		PayloadSize: c.payloadSize,
-		N:           c.targetNodes,
-		T:           c.t,
-		D:           c.d,
-		NumSilent:   c.numSilent,
-		NumIsolated: c.numIsolated,
-		NodeMetrics: c.nodeMetrics,
+		Algorithm:        c.algorithm,
+		PayloadSize:      c.payloadSize,
+		N:                c.targetNodes,
+		T:                c.t,
+		D:                c.d,
+		DesignatedSender: c.designatedSender,
+		NumSilent:        c.numSilent,
+		NumIsolated:      c.numIsolated,
+		NodeMetrics:      c.nodeMetrics,
 	}
 
 	data, err := json.MarshalIndent(output, "", "  ")

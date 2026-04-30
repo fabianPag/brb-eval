@@ -12,7 +12,7 @@ type Manager struct {
 	role      string
 	handler   core.MessageHandler
 	metrics   core.Metrics
-	done      chan struct{}
+	done      chan []byte
 }
 
 func New(id core.NodeID, transport core.Transport, role string, metrics core.Metrics) *Manager {
@@ -21,7 +21,7 @@ func New(id core.NodeID, transport core.Transport, role string, metrics core.Met
 		transport: transport,
 		role:      role,
 		metrics:   metrics,
-		done:      make(chan struct{}),
+		done:      make(chan []byte, 1),
 	}
 }
 
@@ -75,18 +75,18 @@ func (m *Manager) Broadcast(payload []byte) {
 	}
 }
 
-func (m *Manager) Deliver(initiator core.NodeID, value []byte) {
+func (m *Manager) Deliver(initiator core.NodeID, payload []byte) {
 	m.metrics.RecordDelivery()
 	fmt.Printf("[DELIVER] From node %d\n", initiator)
-	m.done <- struct{}{}
+	m.done <- payload
 }
 
-func (m *Manager) WaitForDelivery(timeout time.Duration) bool {
+func (m *Manager) WaitForDelivery(timeout time.Duration) ([]byte, bool) {
 	select {
-	case <-m.done:
-		return true
+	case payload := <-m.done:
+		return payload, true
 	case <-time.After(timeout):
 		fmt.Println("Timed out waiting for delivery")
-		return false
+		return nil, false
 	}
 }

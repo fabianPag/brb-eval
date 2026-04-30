@@ -12,6 +12,8 @@ import (
 	"bytes"
 	"crypto/ed25519"
 	"crypto/rand"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -86,6 +88,8 @@ func main() {
 
 	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, config.Role, metricsInstance)
 
+	sentHashString := ""
+
 	type brbAlgorithm interface {
 		HandleIncoming(core.NodeID, []byte)
 		InitiateBroadcast([]byte)
@@ -154,6 +158,9 @@ func main() {
 			payload := make([]byte, config.PayloadSize)
 			rand.Read(payload)
 
+			hashBytes := sha256.Sum256(payload)
+			sentHashString = hex.EncodeToString(hashBytes[:])
+
 			fmt.Printf("Initiating broadcast of %d byte payload.\n", config.PayloadSize)
 			metricsInstance.RecordInitTime()
 
@@ -162,13 +169,20 @@ func main() {
 	}
 
 	delivered := false
+	var deliveredPayload []byte
 	if config.Role == "honest" {
-		delivered = mgr.WaitForDelivery(30 * time.Second) // Wait until manager signals delivery or timeout after 30 seconds. Optimized towards Shadow, feel free to change lol
+		deliveredPayload, delivered = mgr.WaitForDelivery(30 * time.Second) // Wait until manager signals delivery or timeout after 30 seconds. Optimized towards Shadow, feel free to change lol
 	}
 
 	fmt.Println("[INFO] Signaling done. Waiting for controller to signal other nodes are done...")
 	if err := signalDoneAndWait(*controllerAddr, *nodeID); err != nil {
 		fmt.Printf("[ERROR] Failed to wait for network delivered signal: %v\n", err)
+	}
+
+	deliveredHashString := ""
+	if delivered && deliveredPayload != nil {
+		hashBytes := sha256.Sum256(deliveredPayload)
+		deliveredHashString = hex.EncodeToString(hashBytes[:])
 	}
 
 	metricsResults := metricsInstance.GetMetrics()
@@ -177,6 +191,8 @@ func main() {
 		NodeID:           *nodeID,
 		Role:             config.Role,
 		Delivered:        delivered,
+		DeliveredHash:    deliveredHashString,
+		SentHash:         sentHashString,
 		FirstMessageTime: metricsResults.FirstMessageTime,
 		DeliveryTime:     metricsResults.DeliveryTime,
 		MessagesReceived: metricsResults.MessagesReceived,

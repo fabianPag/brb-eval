@@ -44,7 +44,7 @@ func main() {
 	}
 
 	if 3*t+2*d >= *targetNodes {
-		fmt.Println("Invalid configuration: 3t + 2d must be strictly less than n. Got t=%d, d=%d, n=%d", t, d, *targetNodes)
+		fmt.Printf("Invalid configuration: 3t + 2d must be strictly less than n. Got t=%d, d=%d, n=%d", t, d, *targetNodes)
 		os.Exit(1)
 	}
 

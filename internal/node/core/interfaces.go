@@ -12,7 +12,7 @@ type Manager interface {
 	NumPeers() int
 	Deliver(initiator NodeID, value []byte)
 	Run()
-	WaitForDelivery(timeout time.Duration) bool
+	WaitForDelivery(timeout time.Duration) ([]byte, bool)
 }
 
 type TransportMessage struct {
