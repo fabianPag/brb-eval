@@ -7,6 +7,8 @@ TWINSSENDER ?= false
 NUMSILENT ?= 0
 NUMISOLATED ?= 0
 
+.PHONY: build clean sim sim-fast
+
 build:
 	@mkdir -p ./bin
 	go build -o ./bin/node ./cmd/node
@@ -16,7 +18,10 @@ clean:
 	rm -rf ./bin
 	rm -rf ./evaluations/sim
 
-sim: clean build
+sim: build sim-fast
+
+sim-fast:
 	@mkdir -p ./evaluations/sim
+	@rm -rf ./evaluations/sim/*
 	./evaluations/scripts/sim/generate_shadow_config.sh $(PEERS) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D) $(TWINSSENDER) $(NUMSILENT) $(NUMISOLATED)
 	cd ./evaluations/sim && shadow shadow.yaml
