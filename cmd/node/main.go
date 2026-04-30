@@ -23,17 +23,15 @@ import (
 	"time"
 )
 
+type brbAlgorithm interface {
+	HandleIncoming(core.NodeID, []byte)
+	InitiateBroadcast([]byte)
+}
+
 func main() {
 	nodeID := flag.Int("id", -1, "this node's ID")
 	nodeAddr := flag.String("addr", "", "this nodes host:port")
 	controllerAddr := flag.String("controller", "", "address of the controller")
-
-	pub, priv, err := ed25519.GenerateKey(nil)
-	if err != nil {
-		fmt.Println("[ERROR] Failed to generate key pair:", err)
-		os.Exit(1)
-	}
-
 	flag.Parse()
 
 	if *nodeID < 0 || *nodeAddr == "" || *controllerAddr == "" {
@@ -49,7 +47,13 @@ func main() {
 		os.Exit(1)
 	}
 
-	config, err := registerWithController(*controllerAddr, *nodeAddr, *nodeID, pub)
+	pub, priv, err := ed25519.GenerateKey(nil)
+	if err != nil {
+		fmt.Println("[ERROR] Failed to generate key pair:", err)
+		os.Exit(1)
+	}
+
+	config, err := sendRegisterAndWait(*controllerAddr, *nodeAddr, *nodeID, pub)
 	if err != nil {
 		fmt.Printf("[ERROR] Failed to register with controller: %v\n", err)
 		os.Exit(1)
@@ -57,12 +61,9 @@ func main() {
 	fmt.Printf("Registered with controller. Network has %d peers.\n", len(config.Peers))
 
 	peers := make(map[core.NodeID]string)
-	for id, info := range config.Peers {
-		peers[core.NodeID(id)] = info.Address
-	}
-
 	publicKeys := make(map[core.NodeID]ed25519.PublicKey)
 	for id, info := range config.Peers {
+		peers[core.NodeID(id)] = info.Address
 		publicKeys[core.NodeID(id)] = info.PublicKey
 	}
 
@@ -75,27 +76,16 @@ func main() {
 	}
 	fmt.Println("Connected to all peers.")
 
-	fmt.Printf("Waiting for start signal...\n")
-	if err := waitForStart(*controllerAddr, *nodeID); err != nil {
-		fmt.Printf("[ERROR] Failed to wait for start signal: %v\n", err)
-		os.Exit(1)
-	}
-	fmt.Printf("Received start signal. Starting %s.\n", config.Algorithm)
-
 	metricsInstance := metrics.New()
-
-	fmt.Println("Acting as role:", config.Role)
 
 	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, config.Role, metricsInstance)
 
 	sentHashString := ""
 
-	type brbAlgorithm interface {
-		HandleIncoming(core.NodeID, []byte)
-		InitiateBroadcast([]byte)
-	}
+	var brb1, brb2 brbAlgorithm
 
-	var brb brbAlgorithm
+	var payload1, payload2 []byte
+
 	isTwinsSender := config.Role == "twins_sender" && config.DesignatedSender == *nodeID
 	if isTwinsSender {
 		fmt.Println("Twins sender, splitting network")
@@ -104,7 +94,6 @@ func main() {
 
 		p1Manager := manager.NewSplitManager(mgr, 0, partitionMid)
 		p2Manager := manager.NewSplitManager(mgr, partitionMid, core.NodeID(numPeers))
-		var brb1, brb2 brbAlgorithm
 		selectedAlgorithm := strings.ToLower(config.Algorithm)
 		switch selectedAlgorithm {
 		case "bracha":
@@ -128,44 +117,53 @@ func main() {
 			}
 		})
 		go mgr.Run()
-		payload1 := make([]byte, config.PayloadSize)
+		payload1 = make([]byte, config.PayloadSize)
 		rand.Read(payload1)
 
-		payload2 := make([]byte, config.PayloadSize)
+		payload2 = make([]byte, config.PayloadSize)
 		rand.Read(payload2)
-		metricsInstance.RecordInitTime()
-
-		brb1.InitiateBroadcast(payload1)
-		brb2.InitiateBroadcast(payload2)
 	} else {
 		selectedAlgorithm := strings.ToLower(config.Algorithm)
 		switch selectedAlgorithm {
 		case "bracha":
-			brb = bracha.NewBracha(mgr)
+			brb1 = bracha.NewBracha(mgr)
 		case "afrt":
-			brb = afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
+			brb1 = afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
 		case "codedmbrb":
-			brb = codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+			brb1 = codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
 		default:
 			fmt.Printf("[ERROR] Unknown algorithm: %s. Available options: bracha, codedmbrb, afrt\n", selectedAlgorithm)
 			os.Exit(1)
 		}
 
-		mgr.OnReceive(brb.HandleIncoming)
+		mgr.OnReceive(brb1.HandleIncoming)
 		go mgr.Run()
 
 		if config.DesignatedSender == *nodeID {
-			payload := make([]byte, config.PayloadSize)
-			rand.Read(payload)
+			payload1 = make([]byte, config.PayloadSize)
+			rand.Read(payload1)
 
-			hashBytes := sha256.Sum256(payload)
+			hashBytes := sha256.Sum256(payload1)
 			sentHashString = hex.EncodeToString(hashBytes[:])
-
-			fmt.Printf("Initiating broadcast of %d byte payload.\n", config.PayloadSize)
-			metricsInstance.RecordInitTime()
-
-			brb.InitiateBroadcast(payload)
 		}
+	}
+
+	fmt.Printf("Signaling ready...\n")
+	if err := sendReadyAndWait(*controllerAddr, *nodeID); err != nil {
+		fmt.Printf("[ERROR] Failed to signal ready: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Printf("All nodes ready. Starting %s. Acting as role %s\n", config.Algorithm, config.Role)
+
+	if isTwinsSender {
+		fmt.Printf("Initiating broadcast of two %d byte payloads.\n", config.PayloadSize)
+		metricsInstance.RecordInitTime()
+		brb1.InitiateBroadcast(payload1)
+		brb2.InitiateBroadcast(payload2)
+	} else if config.DesignatedSender == *nodeID {
+		fmt.Printf("Initiating broadcast of %d byte payload.\n", config.PayloadSize)
+		metricsInstance.RecordInitTime()
+		brb1.InitiateBroadcast(payload1)
 	}
 
 	delivered := false
@@ -174,10 +172,11 @@ func main() {
 		deliveredPayload, delivered = mgr.WaitForDelivery(30 * time.Second) // Wait until manager signals delivery or timeout after 30 seconds. Optimized towards Shadow, feel free to change lol
 	}
 
-	fmt.Println("[INFO] Signaling done. Waiting for controller to signal other nodes are done...")
-	if err := signalDoneAndWait(*controllerAddr, *nodeID); err != nil {
-		fmt.Printf("[ERROR] Failed to wait for network delivered signal: %v\n", err)
+	fmt.Println("Signaling done...")
+	if err := sendDoneAndWait(*controllerAddr, *nodeID); err != nil {
+		fmt.Printf("[ERROR] Failed to signal done: %v\n", err)
 	}
+	fmt.Println("All nodes done. Sending metrics...")
 
 	deliveredHashString := ""
 	if delivered && deliveredPayload != nil {
@@ -201,16 +200,17 @@ func main() {
 		BytesSent:        metricsResults.BytesSent,
 	}
 
-	if err := sendMetrics(*controllerAddr, metricsData); err != nil {
+	if err := sendMetricsAndWait(*controllerAddr, metricsData); err != nil {
 		fmt.Printf("[ERROR] Failed to send metrics: %v\n", err)
 	}
+	fmt.Printf("Metrics sent successfully.\n")
 
 	metricsInstance.PrintMetrics()
 
 	os.Exit(0)
 }
 
-func sendMetrics(controllerAddr string, data api.MetricsData) error {
+func sendMetricsAndWait(controllerAddr string, data api.MetricsData) error {
 	body, err := json.Marshal(data)
 	if err != nil {
 		return err
@@ -227,11 +227,10 @@ func sendMetrics(controllerAddr string, data api.MetricsData) error {
 	if resp.StatusCode != http.StatusOK {
 		return fmt.Errorf("unexpected status code: %d", resp.StatusCode)
 	}
-	fmt.Printf("Metrics sent successfully.\n")
 	return nil
 }
 
-func registerWithController(controllerAddr string, nodeAddr string, nodeID int, publicKey ed25519.PublicKey) (api.Config, error) {
+func sendRegisterAndWait(controllerAddr string, nodeAddr string, nodeID int, publicKey ed25519.PublicKey) (api.Config, error) {
 	myInfo := api.PeerInfo{
 		ID:        nodeID,
 		Address:   nodeAddr,
@@ -260,7 +259,7 @@ func registerWithController(controllerAddr string, nodeAddr string, nodeID int, 
 	return config, nil
 }
 
-func waitForStart(controllerURL string, id int) error {
+func sendReadyAndWait(controllerURL string, id int) error {
 	url := fmt.Sprintf("http://%s/ready?id=%d", controllerURL, id)
 
 	client := &http.Client{
@@ -280,7 +279,7 @@ func waitForStart(controllerURL string, id int) error {
 	return nil
 }
 
-func signalDoneAndWait(controllerURL string, id int) error {
+func sendDoneAndWait(controllerURL string, id int) error {
 	url := fmt.Sprintf("http://%s/done?id=%d", controllerURL, id)
 
 	client := &http.Client{
