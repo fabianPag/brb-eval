@@ -1,7 +1,6 @@
 package ts
 
 import (
-	"crypto/sha256"
 	"fmt"
 	"math/big"
 
@@ -11,17 +10,8 @@ import (
 
 // HashToG1 hashes an arbitrary message to a point on the G1 curve.
 func HashToG1(message []byte) (bn254.G1Affine, error) {
-	h := sha256.New()
-	h.Write(message)
-	hashSum := h.Sum(nil)
-
-	var scalar big.Int
-	scalar.SetBytes(hashSum)
-
-	_, _, G1Gen, _ := bn254.Generators()
-	var point bn254.G1Affine
-	point.ScalarMultiplication(&G1Gen, &scalar)
-	return point, nil
+	dst := []byte("TS_BLS_SIG")
+	return bn254.HashToG1(message, dst)
 }
 
 // SignShare creates a partial signature using a node's private share for a given commitment.

@@ -1,7 +1,6 @@
 package vc
 
 import (
-	"crypto/sha256"
 	"fmt"
 
 	"github.com/consensys/gnark-crypto/ecc/bn254/fr"
@@ -10,12 +9,14 @@ import (
 
 // HashToFr hashes a byte array to a BN254 scalar field element.
 func HashToFr(data []byte) fr.Element {
-	h := sha256.New()
-	h.Write(data)
-	hashSum := h.Sum(nil)
-	var e fr.Element
-	e.SetBytes(hashSum)
-	return e
+	dst := []byte("VC_FR_HASH")
+	elements, err := fr.Hash(data, dst, 1)
+
+	if err != nil {
+		panic("failed to hash to field: " + err.Error())
+	}
+
+	return elements[0]
 }
 
 // LagrangeInterpolate reconstructs a polynomial from n evaluating points.
