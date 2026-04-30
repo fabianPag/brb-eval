@@ -10,6 +10,7 @@ import (
 	"brb-eval/internal/node/core"
 	"bytes"
 	"crypto/ed25519"
+	"crypto/sha256"
 	"encoding/gob"
 	"fmt"
 	"sync"
@@ -25,6 +26,12 @@ type Bundle struct {
 type MsgKey struct {
 	Initiator core.NodeID
 	SeqNum    int
+	ValueHash [32]byte
+}
+
+type InstanceKey struct {
+	Initiator core.NodeID
+	SeqNum    int
 }
 
 type AFRT struct {
@@ -36,8 +43,8 @@ type AFRT struct {
 	privKey   ed25519.PrivateKey
 	pubKeys   map[core.NodeID]ed25519.PublicKey
 	savedSigs map[MsgKey]map[core.NodeID][]byte
-	delivered map[MsgKey]bool
-	hasSigned map[MsgKey]bool
+	delivered map[InstanceKey]bool
+	hasSigned map[InstanceKey]bool
 }
 
 func NewAFRT(m core.Manager, t int, d int, priv ed25519.PrivateKey, pubs map[core.NodeID]ed25519.PublicKey) *AFRT {
@@ -55,8 +62,8 @@ func NewAFRT(m core.Manager, t int, d int, priv ed25519.PrivateKey, pubs map[cor
 		privKey:   priv,
 		pubKeys:   pubs,
 		savedSigs: make(map[MsgKey]map[core.NodeID][]byte),
-		delivered: make(map[MsgKey]bool),
-		hasSigned: make(map[MsgKey]bool),
+		delivered: make(map[InstanceKey]bool),
+		hasSigned: make(map[InstanceKey]bool),
 	}
 }
 
@@ -71,84 +78,86 @@ func (b *AFRT) HandleIncoming(fromID core.NodeID, payload []byte) {
 	if bundle.SeqNum != 0 {
 		return
 	}
+	valueHash := sha256.Sum256(bundle.Value)
 
-	key := MsgKey{Initiator: bundle.Initiator, SeqNum: bundle.SeqNum}
+	msgKey := MsgKey{Initiator: bundle.Initiator, SeqNum: bundle.SeqNum, ValueHash: valueHash}
+	instKey := InstanceKey{Initiator: bundle.Initiator, SeqNum: bundle.SeqNum}
 
 	// (3) if ((−, sn, j) not already mbrb-delivered
 	b.mu.Lock()
-	if b.delivered[key] {
+	if b.delivered[instKey] {
 		b.mu.Unlock()
 		return
 	}
 	b.mu.Unlock()
 
 	signedMsg, ok := bundle.Sigs[bundle.Initiator]
-	if !ok || !b.verify(bundle.Value, bundle.SeqNum, bundle.Initiator, bundle.Initiator, signedMsg) {
+	if !ok || !b.verify(valueHash, bundle.SeqNum, bundle.Initiator, bundle.Initiator, signedMsg) {
 		return
 	}
 
 	validSigs := make(map[core.NodeID][]byte)
 	for signer, sig := range bundle.Sigs {
-		if b.verify(bundle.Value, bundle.SeqNum, bundle.Initiator, signer, sig) {
+		if b.verify(valueHash, bundle.SeqNum, bundle.Initiator, signer, sig) {
 			validSigs[signer] = sig
 		}
 	}
 
 	b.mu.Lock()
 
-	if b.delivered[key] {
+	if b.delivered[instKey] {
 		b.mu.Unlock()
 		return
 	}
 
-	if b.savedSigs[key] == nil {
-		b.savedSigs[key] = make(map[core.NodeID][]byte)
+	if b.savedSigs[msgKey] == nil {
+		b.savedSigs[msgKey] = make(map[core.NodeID][]byte)
 	}
 
 	// (4) Save all unsaved valid signatures for (m,sn,j) of sigs;
 	for signer, sig := range validSigs {
-		b.savedSigs[key][signer] = append([]byte(nil), sig...)
+		b.savedSigs[msgKey][signer] = append([]byte(nil), sig...)
 	}
 
 	doSign := false
 	var mySig []byte
 
 	// (5) if ((-,sn,j) not already signed by pi) then
-	if !b.hasSigned[key] {
-		b.hasSigned[key] = true
+	if !b.hasSigned[instKey] {
+		b.hasSigned[instKey] = true
 		doSign = true
 	}
 
 	doDeliver := false
 	// (9) if strictly more than (n+t)/2 signatures for (m,sn,j) are saved
-	if len(b.savedSigs[key]) > (b.n+b.t)/2 {
-		b.delivered[key] = true
+	if len(b.savedSigs[msgKey]) > (b.n+b.t)/2 {
+		b.delivered[instKey] = true
 		doDeliver = true
 	}
 
 	sigsToSend := make(map[core.NodeID][]byte)
-	for k, v := range b.savedSigs[key] {
+	for k, v := range b.savedSigs[msgKey] {
 		sigsToSend[k] = append([]byte(nil), v...)
 	}
 	b.mu.Unlock()
 
 	// (6) save signature for (m,sn,j) by pi
 	if doSign {
-		mySig = b.sign(bundle.Value, bundle.SeqNum, bundle.Initiator)
+		mySig = b.sign(valueHash, bundle.SeqNum, bundle.Initiator)
 
 		b.mu.Lock()
-		b.savedSigs[key][b.manager.ID()] = append([]byte(nil), mySig...)
+		b.savedSigs[msgKey][b.manager.ID()] = append([]byte(nil), mySig...)
 		sigsToSend[b.manager.ID()] = append([]byte(nil), mySig...)
 		b.mu.Unlock()
 
 		// (7) broadcast bundle(m, sn, j, {all saved signatures for (m, sn, j)})
-		b.sendBundle(key, bundle.Value, sigsToSend)
+		b.sendBundle(msgKey, bundle.Value, sigsToSend)
 	}
 
 	if doDeliver {
 		// (10) broadcast bundle(m, sn, j, {all saved signatures for (m, sn, j)});
 		if !doSign {
-			b.sendBundle(key, bundle.Value, sigsToSend)
+			b.sendBundle(msgKey, bundle.Value, sigsToSend)
 		}
 		// (11) mbrb_deliver(m, sn, j)
 		b.manager.Deliver(bundle.Initiator, []byte(bundle.Value))
@@ -157,38 +166,39 @@ func (b *AFRT) HandleIncoming(fromID core.NodeID, payload []byte) {
 
 func (b *AFRT) InitiateBroadcast(value []byte) {
 	const sn = 0 // hardcoded for single-shot implementation
+	valueHash := sha256.Sum256(value)
+	msgKey := MsgKey{Initiator: b.manager.ID(), SeqNum: sn, ValueHash: valueHash}
+	instKey := InstanceKey{Initiator: b.manager.ID(), SeqNum: sn}
 
-	key := MsgKey{Initiator: b.manager.ID(), SeqNum: sn}
-
-	sig := b.sign(value, sn, b.manager.ID())
+	sig := b.sign(valueHash, sn, b.manager.ID())
 
 	b.mu.Lock()
-	if b.savedSigs[key] == nil {
-		b.savedSigs[key] = make(map[core.NodeID][]byte)
+	if b.savedSigs[msgKey] == nil {
+		b.savedSigs[msgKey] = make(map[core.NodeID][]byte)
 	}
-	b.savedSigs[key][b.manager.ID()] = append([]byte(nil), sig...)
-	b.hasSigned[key] = true
+	b.savedSigs[msgKey][b.manager.ID()] = append([]byte(nil), sig...)
+	b.hasSigned[instKey] = true
 
 	sigsToSend := make(map[core.NodeID][]byte)
-	for k, v := range b.savedSigs[key] {
+	for k, v := range b.savedSigs[msgKey] {
 		sigsToSend[k] = append([]byte(nil), v...)
 	}
 	b.mu.Unlock()
 
-	b.sendBundle(key, value, sigsToSend)
+	b.sendBundle(msgKey, value, sigsToSend)
 }
 
-func (b *AFRT) sign(value []byte, sn int, origin core.NodeID) []byte {
-	msg := fmt.Sprintf("%s|%d|%d", value, sn, origin)
+func (b *AFRT) sign(valueHash [32]byte, sn int, origin core.NodeID) []byte {
+	msg := fmt.Sprintf("%x|%d|%d", valueHash, sn, origin)
 	return ed25519.Sign(b.privKey, []byte(msg))
 }
 
-func (b *AFRT) verify(value []byte, sn int, origin core.NodeID, signer core.NodeID, sig []byte) bool {
+func (b *AFRT) verify(valueHash [32]byte, sn int, origin core.NodeID, signer core.NodeID, sig []byte) bool {
 	pub, ok := b.pubKeys[signer]
 	if !ok {
 		return false
 	}
-	msg := fmt.Sprintf("%s|%d|%d", value, sn, origin)
+	msg := fmt.Sprintf("%x|%d|%d", valueHash, sn, origin)
 	return ed25519.Verify(pub, []byte(msg), sig)
 }
 
