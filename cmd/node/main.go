@@ -97,8 +97,8 @@ func main() {
 		selectedAlgorithm := strings.ToLower(config.Algorithm)
 		switch selectedAlgorithm {
 		case "bracha":
-			brb1 = bracha.NewBracha(p1Manager)
-			brb2 = bracha.NewBracha(p2Manager)
+			brb1 = bracha.NewBracha(p1Manager, config.T)
+			brb2 = bracha.NewBracha(p2Manager, config.T)
 		case "afrt":
 			brb1 = afrt.NewAFRT(p1Manager, config.T, config.D, priv, publicKeys)
 			brb2 = afrt.NewAFRT(p2Manager, config.T, config.D, priv, publicKeys)
@@ -126,7 +126,7 @@ func main() {
 		selectedAlgorithm := strings.ToLower(config.Algorithm)
 		switch selectedAlgorithm {
 		case "bracha":
-			brb1 = bracha.NewBracha(mgr)
+			brb1 = bracha.NewBracha(mgr, config.T)
 		case "afrt":
 			brb1 = afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
 		case "codedmbrb":

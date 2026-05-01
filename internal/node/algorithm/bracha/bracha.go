@@ -1,7 +1,7 @@
 /*
-	Implementation of Raynal's version of Bracha's algorithm from the book "Fault-Tolerant Message-Passing Distributed Systems"
-	DOI: 10.1007/978-3-319-94141-7
-	https://link.springer.com/book/10.1007/978-3-319-94141-7
+   Implementation of Raynal's version of Bracha's algorithm from the book "Fault-Tolerant Message-Passing Distributed Systems"
+   DOI: 10.1007/978-3-319-94141-7
+   https://link.springer.com/book/10.1007/978-3-319-94141-7
 */
 
 package bracha
@@ -9,6 +9,7 @@ package bracha
 import (
 	"brb-eval/internal/node/core"
 	"bytes"
+	"crypto/sha256"
 	"encoding/gob"
 	"fmt"
 	"sync"
@@ -29,35 +30,38 @@ type Message struct {
 	Value     []byte
 }
 
-type BroadcastID struct {
-	Initiator core.NodeID
-	Value     string
-}
+type ValueHash [32]byte
 
 type Bracha struct {
-	mu            sync.Mutex
-	manager       core.Manager
-	echoReceived  map[BroadcastID]map[core.NodeID]bool
-	echoSent      map[BroadcastID]bool
-	readyReceived map[BroadcastID]map[core.NodeID]bool
-	readySent     map[BroadcastID]bool
-	delivered     map[BroadcastID]bool
-	n             int
-	t             int
+	mu      sync.Mutex
+	manager core.Manager
+	n       int
+	t       int
+	// Map by initiator and value, so we know exactly which values have been voted for.
+	echoReceived  map[core.NodeID]map[ValueHash]map[core.NodeID]bool
+	readyReceived map[core.NodeID]map[ValueHash]map[core.NodeID]bool
+	// Map by initiator only, so we don't send multiple for different values from same initiator (equivocation attack).
+	echoSent  map[core.NodeID]bool
+	readySent map[core.NodeID]bool
+	delivered map[core.NodeID]bool
 }
 
-func NewBracha(m core.Manager) *Bracha {
-	nCount := m.NumPeers()
+func NewBracha(m core.Manager, t int) *Bracha {
+	n := m.NumPeers()
+
+	if n <= 3*t {
+		panic(fmt.Sprintf("invalid parameters: require n > 3t, got n=%d t=%d", n, t))
+	}
 
 	return &Bracha{
 		manager:       m,
-		n:             nCount,
-		t:             (nCount - 1) / 3,
-		echoReceived:  make(map[BroadcastID]map[core.NodeID]bool),
-		echoSent:      make(map[BroadcastID]bool),
-		readyReceived: make(map[BroadcastID]map[core.NodeID]bool),
-		readySent:     make(map[BroadcastID]bool),
-		delivered:     make(map[BroadcastID]bool),
+		n:             n,
+		t:             t,
+		echoReceived:  make(map[core.NodeID]map[ValueHash]map[core.NodeID]bool),
+		readyReceived: make(map[core.NodeID]map[ValueHash]map[core.NodeID]bool),
+		echoSent:      make(map[core.NodeID]bool),
+		readySent:     make(map[core.NodeID]bool),
+		delivered:     make(map[core.NodeID]bool),
 	}
 }
 
@@ -69,63 +73,64 @@ func (b *Bracha) HandleIncoming(fromID core.NodeID, payload []byte) {
 		return
 	}
 	msg.Sender = fromID
+	initID := msg.Initiator
 
-	key := BroadcastID{Initiator: msg.Initiator, Value: string(msg.Value)}
+	valueHash := sha256.Sum256(msg.Value)
 
 	var doEcho, doReady, doDeliver bool
+	var valueToBroadcast []byte
 
 	b.mu.Lock()
+
 	if msg.Type == Echo {
-		if b.echoReceived[key] == nil {
-			b.echoReceived[key] = make(map[core.NodeID]bool)
+		if b.echoReceived[initID] == nil {
+			b.echoReceived[initID] = make(map[ValueHash]map[core.NodeID]bool)
 		}
-		b.echoReceived[key][msg.Sender] = true
+		if b.echoReceived[initID][valueHash] == nil {
+			b.echoReceived[initID][valueHash] = make(map[core.NodeID]bool)
+		}
+		b.echoReceived[initID][valueHash][msg.Sender] = true
 	}
 
 	if msg.Type == Ready {
-		if b.readyReceived[key] == nil {
-			b.readyReceived[key] = make(map[core.NodeID]bool)
+		if b.readyReceived[initID] == nil {
+			b.readyReceived[initID] = make(map[ValueHash]map[core.NodeID]bool)
 		}
-		b.readyReceived[key][msg.Sender] = true
+		if b.readyReceived[initID][valueHash] == nil {
+			b.readyReceived[initID][valueHash] = make(map[core.NodeID]bool)
+		}
+		b.readyReceived[initID][valueHash][msg.Sender] = true
 	}
 
 	switch msg.Type {
-	case Init: // when INIT(j,m) is recieved do:
-		if !b.echoSent[key] { // if (first reception of INIT(j,-) and ECHO(j,m) not yet broadcast)
-			b.echoSent[key] = true
-			//b.broadcastMsg(Echo, msg.Initiator, msg.Value)
+	case Init: // when INIT(j,m) is received do
+		// (2) if (first reception of INIT(j,-))
+		if msg.Sender == initID && !b.echoSent[initID] {
+			// then broadcast ECHO(j,m)
+			b.echoSent[initID] = true
+			valueToBroadcast = msg.Value
 			doEcho = true
 		}
-	case Echo: // when ECHO(j,m) is recieved do
-		// if (ECHO(j,m) receiveed from more than (n+t)/2 different processes)
-		if len(b.echoReceived[key]) > ((b.n + b.t) / 2) {
-			if !b.echoSent[key] { // if (ECHO(j,m) not yet broadcast) then broadcast ECHO(j,m)
-				b.echoSent[key] = true
-				//b.broadcastMsg(Echo, msg.Initiator, msg.Value)
-				doEcho = true
-			}
-			if !b.readySent[key] { // if (READY(j,m) not yet broadcast) then broadcast ECHO(j,m)
-				b.readySent[key] = true
-				//b.broadcastMsg(Ready, msg.Initiator, msg.Value)
-				doReady = true
-			}
+	case Echo: // when ECHO(j,m) is received do
+		// (3) if (ECHO(j,m) received from more than (n+t)/2 different processes) and (READY(j,m) not yet broadcast)
+		if len(b.echoReceived[initID][valueHash]) > ((b.n+b.t)/2) && !b.readySent[initID] {
+			// (4) then broadcast READY(j,m)
+			b.readySent[initID] = true
+			valueToBroadcast = msg.Value
+			doReady = true
 		}
 	case Ready: // when READY(j,m) is received do
-		if len(b.readyReceived[key]) >= b.t+1 {
-			if !b.echoSent[key] { // if (ECHO(j,m) not yet broadcast) then broadcast ECHO(j,m)
-				b.echoSent[key] = true
-				//b.broadcastMsg(Echo, msg.Initiator, msg.Value)
-				doEcho = true
-			}
-			if !b.readySent[key] { // if (READY(j,m) not yet broadcast) then broadcast ECHO(j,m)
-				b.readySent[key] = true
-				//b.broadcastMsg(Ready, msg.Initiator, msg.Value)
-				doReady = true
-			}
+		// (6) if (READY(j,m) received from (t+1) different processes) and (READY(j,m) not yet broadcast)
+		if len(b.readyReceived[initID][valueHash]) >= b.t+1 && !b.readySent[initID] {
+			// (7) then broadcast READY(j,m)
+			b.readySent[initID] = true
+			valueToBroadcast = msg.Value
+			doReady = true
 		}
-		if len(b.readyReceived[key]) >= 2*b.t+1 && !b.delivered[key] {
-			b.delivered[key] = true
-			//b.manager.Deliver(msg.Initiator, []byte(msg.Value))
+		// (9) if (READY(j,m) received from (2t+1) different processes) and (<j,m> not yet brb-delivered)
+		if len(b.readyReceived[initID][valueHash]) >= 2*b.t+1 && !b.delivered[initID] {
+			// (10) then BRB-deliver <j,m>
+			b.delivered[initID] = true
 			doDeliver = true
 		}
 	}
@@ -133,13 +138,13 @@ func (b *Bracha) HandleIncoming(fromID core.NodeID, payload []byte) {
 	b.mu.Unlock()
 
 	if doEcho {
-		b.broadcastMsg(Echo, msg.Initiator, msg.Value)
+		b.broadcastMsg(Echo, initID, valueToBroadcast)
 	}
 	if doReady {
-		b.broadcastMsg(Ready, msg.Initiator, msg.Value)
+		b.broadcastMsg(Ready, initID, valueToBroadcast)
 	}
 	if doDeliver {
-		b.manager.Deliver(msg.Initiator, []byte(msg.Value))
+		b.manager.Deliver(initID, msg.Value)
 	}
 }
 
@@ -150,10 +155,10 @@ func (b *Bracha) broadcastMsg(msgType MsgType, initiator core.NodeID, value []by
 		fmt.Printf("[ERROR] Failed to encode message type %s: %v\n", msgType, err)
 		return
 	}
-	data := buf.Bytes()
-	b.manager.Broadcast(data)
+	b.manager.Broadcast(buf.Bytes())
 }
 
 func (b *Bracha) InitiateBroadcast(valueToSend []byte) {
+	// (1) broadcast INIT(i, mi)
 	b.broadcastMsg(Init, b.manager.ID(), valueToSend)
 }
