@@ -76,14 +76,13 @@ func (b *AFRT) HandleIncoming(fromID core.NodeID, payload []byte) {
 	}
 
 	if bundle.SeqNum != 0 {
+		// Because we are only testing single-shot, if seqnum != 0 then something is wrong.
 		return
 	}
-	valueHash := sha256.Sum256(bundle.Value)
 
-	msgKey := MsgKey{Initiator: bundle.Initiator, SeqNum: bundle.SeqNum, ValueHash: valueHash}
 	instKey := InstanceKey{Initiator: bundle.Initiator, SeqNum: bundle.SeqNum}
 
-	// (3) if ((−, sn, j) not already mbrb-delivered
+	// (3) if (−, sn, j) not already mbrb-delivered
 	b.mu.Lock()
 	if b.delivered[instKey] {
 		b.mu.Unlock()
@@ -91,6 +90,10 @@ func (b *AFRT) HandleIncoming(fromID core.NodeID, payload []byte) {
 	}
 	b.mu.Unlock()
 
+	valueHash := sha256.Sum256(bundle.Value)
+	msgKey := MsgKey{Initiator: bundle.Initiator, SeqNum: bundle.SeqNum, ValueHash: valueHash}
+
+	// (3) and sigs contains the valid signature for (m, sn, j) by pj
 	signedMsg, ok := bundle.Sigs[bundle.Initiator]
 	if !ok || !b.verify(valueHash, bundle.SeqNum, bundle.Initiator, bundle.Initiator, signedMsg) {
 		return
@@ -103,64 +106,61 @@ func (b *AFRT) HandleIncoming(fromID core.NodeID, payload []byte) {
 		}
 	}
 
-	b.mu.Lock()
+	var doDeliver, doBroadcast bool
+	var sigsToSend map[core.NodeID][]byte
 
+	b.mu.Lock()
+	// (3) if (−, sn, j) not already mbrb-delivered
+	// (Just to ensure no other goroutine has delivered while verifying)
 	if b.delivered[instKey] {
 		b.mu.Unlock()
 		return
 	}
 
+	// (4) save all unsaved valid signatures for (m, sn, j) of sigs
 	if b.savedSigs[msgKey] == nil {
 		b.savedSigs[msgKey] = make(map[core.NodeID][]byte)
 	}
-
-	// (4) Save all unsaved valid signatures for (m,sn,j) of sigs;
 	for signer, sig := range validSigs {
-		b.savedSigs[msgKey][signer] = append([]byte(nil), sig...)
+		if _, exists := b.savedSigs[msgKey][signer]; !exists {
+			b.savedSigs[msgKey][signer] = append([]byte(nil), sig...)
+		}
 	}
 
-	doSign := false
-	var mySig []byte
-
-	// (5) if ((-,sn,j) not already signed by pi) then
+	// (5) if ((-,sn,j) not already signed by pi)
 	if !b.hasSigned[instKey] {
+		// (6) save signature for (m,sn,j) by pi
 		b.hasSigned[instKey] = true
-		doSign = true
+		mySig := b.sign(valueHash, bundle.SeqNum, bundle.Initiator)
+		b.savedSigs[msgKey][b.manager.ID()] = mySig
+		// (7) broadcast bundle(m, sn, j, {all saved signatures for (m, sn, j)})
+		doBroadcast = true
 	}
 
-	doDeliver := false
-	// (9) if strictly more than (n+t)/2 signatures for (m,sn,j) are saved
+	// (9) if (strictly more than (n+t)/2 signatures for (m,sn,j) are saved)
 	if len(b.savedSigs[msgKey]) > (b.n+b.t)/2 {
+		// (10) broadcast bundle(m, sn, j, {all saved signatures for (m, sn, j)})
+		doBroadcast = true
+		// (11) mbrb_deliver(m, sn, j)
 		b.delivered[instKey] = true
 		doDeliver = true
 	}
 
-	sigsToSend := make(map[core.NodeID][]byte)
-	for k, v := range b.savedSigs[msgKey] {
-		sigsToSend[k] = append([]byte(nil), v...)
+	if doBroadcast {
+		sigsToSend = make(map[core.NodeID][]byte, len(b.savedSigs[msgKey]))
+		for k, v := range b.savedSigs[msgKey] {
+			sigsToSend[k] = append([]byte(nil), v...)
+		}
 	}
+
 	b.mu.Unlock()
 
-	// (6) save signature for (m,sn,j) by pi
-	if doSign {
-		mySig = b.sign(valueHash, bundle.SeqNum, bundle.Initiator)
-
-		b.mu.Lock()
-		b.savedSigs[msgKey][b.manager.ID()] = append([]byte(nil), mySig...)
-		sigsToSend[b.manager.ID()] = append([]byte(nil), mySig...)
-		b.mu.Unlock()
-
-		// (7) broadcast bundle(m, sn, j, {all saved signatures for (m, sn, j)})
+	if doBroadcast {
 		b.sendBundle(msgKey, bundle.Value, sigsToSend)
 	}
 
 	if doDeliver {
-		// (10) broadcast bundle(m, sn, j, {all saved signatures for (m, sn, j)});
-		if !doSign {
-			b.sendBundle(msgKey, bundle.Value, sigsToSend)
-		}
-		// (11) mbrb_deliver(m, sn, j)
-		b.manager.Deliver(bundle.Initiator, []byte(bundle.Value))
+		b.manager.Deliver(bundle.Initiator, bundle.Value)
 	}
 }
 
@@ -170,6 +170,7 @@ func (b *AFRT) InitiateBroadcast(value []byte) {
 	msgKey := MsgKey{Initiator: b.manager.ID(), SeqNum: sn, ValueHash: valueHash}
 	instKey := InstanceKey{Initiator: b.manager.ID(), SeqNum: sn}
 
+	// (1) save signature for (m, sn, i) by pi
 	sig := b.sign(valueHash, sn, b.manager.ID())
 
 	b.mu.Lock()
@@ -185,6 +186,7 @@ func (b *AFRT) InitiateBroadcast(value []byte) {
 	}
 	b.mu.Unlock()
 
+	// (2) broadcast bundle(m, sn, i, {all saved signatures for (m, sn, i)})
 	b.sendBundle(msgKey, value, sigsToSend)
 }
 
