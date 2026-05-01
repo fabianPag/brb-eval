@@ -19,15 +19,21 @@ func NewSplitManager(underlying core.Manager, min, max core.NodeID) *SplitManage
 }
 
 // restrict sends to nodes within the split
-func (pm *SplitManager) Send(to core.NodeID, payload []byte) {
-	if to >= pm.lowerBound && to < pm.upperBound {
-		pm.Manager.Send(to, payload)
+func (pm *SplitManager) SendBatch(messages map[core.NodeID][]byte) {
+	filtered := make(map[core.NodeID][]byte)
+	for to, payload := range messages {
+		if to >= pm.lowerBound && to < pm.upperBound {
+			filtered[to] = payload
+		}
 	}
+	pm.Manager.SendBatch(filtered)
 }
 
 // send only to nodes within split
 func (pm *SplitManager) Broadcast(payload []byte) {
+	messages := make(map[core.NodeID][]byte)
 	for nodeID := pm.lowerBound; nodeID < pm.upperBound; nodeID++ {
-		go pm.Send(nodeID, payload)
+		messages[nodeID] = payload
 	}
+	pm.Manager.SendBatch(messages)
 }

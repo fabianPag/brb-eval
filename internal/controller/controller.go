@@ -25,7 +25,7 @@ type Controller struct {
 	t                   int
 	d                   int
 	numSilent           int
-	numIsolated         int
+	numMsgDrops         int
 	algorithm           string
 	payloadSize         int
 	requiredDeliveries  int
@@ -51,18 +51,18 @@ type metricsFile struct {
 	D                int               `json:"d"`
 	DesignatedSender int               `json:"designated_sender"`
 	NumSilent        int               `json:"num_silent"`
-	NumIsolated      int               `json:"num_isolated"`
+	NumMsgDrops      int               `json:"num_msg_drops"`
 	NodeMetrics      []api.MetricsData `json:"node_metrics"`
 }
 
-func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool, numSilent int, numIsolated int) *Controller {
+func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool, numSilent int, numMsgDrops int) *Controller {
 	return &Controller{
 		targetNodes:        targetNodes,
 		designatedSender:   0,
 		t:                  t,
 		d:                  d,
 		numSilent:          numSilent,
-		numIsolated:        numIsolated,
+		numMsgDrops:        numMsgDrops,
 		algorithm:          algorithm,
 		payloadSize:        payloadSize,
 		nodeMetrics:        make([]api.MetricsData, targetNodes),
@@ -169,7 +169,7 @@ func (c *Controller) saveMetricsToFile(filename string) error {
 		D:                c.d,
 		DesignatedSender: c.designatedSender,
 		NumSilent:        c.numSilent,
-		NumIsolated:      c.numIsolated,
+		NumMsgDrops:      c.numMsgDrops,
 		NodeMetrics:      c.nodeMetrics,
 	}
 
@@ -215,16 +215,19 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 		} else {
 			role = "honest"
 		}
-	} else {
-		if int(node.ID) >= c.targetNodes-c.numSilent {
-			role = "silent"
-		} else if int(node.ID) >= c.targetNodes-c.numSilent-c.numIsolated {
-			role = "isolated"
-		}
+	} else if int(node.ID) >= c.targetNodes-c.numSilent {
+		role = "silent"
 	}
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
+
+	honestNodes := make([]int, 0)
+	for i := 0; i < c.targetNodes; i++ {
+		if i < c.targetNodes-c.numSilent {
+			honestNodes = append(honestNodes, i)
+		}
+	}
 
 	config := api.Config{
 		Peers:               c.registeredNodes,
@@ -232,6 +235,8 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 		DesignatedSender:    c.designatedSender,
 		T:                   c.t,
 		D:                   c.d,
+		NumMsgDrops:         c.numMsgDrops,
+		HonestNodes:         honestNodes,
 		PublicCryptoParams:  c.publicCryptoParams,
 		PrivateCryptoParams: c.privateCryptoParams[node.ID],
 		Algorithm:           c.algorithm,

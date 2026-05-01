@@ -265,6 +265,7 @@ func (b *CodedMBRB) InitiateBroadcast(message []byte) {
 	safeSenderShares := b.cloneSignatures(senderShares)
 
 	// Line 20: for all j in N, send <send, C, \tilde{m}_j, j, \pi_j> to node j
+	messages := make(map[core.NodeID][]byte)
 	for j := 1; j <= b.n; j++ {
 		nf := fragments[j]
 
@@ -277,10 +278,10 @@ func (b *CodedMBRB) InitiateBroadcast(message []byte) {
 		}
 		var buf bytes.Buffer
 		if err := gob.NewEncoder(&buf).Encode(sendMsg); err == nil {
-			// Send to node (Nodes in config are 0-indexed, j is 1-indexed)
-			go b.manager.Send(core.NodeID(j-1), buf.Bytes())
+			messages[core.NodeID(j-1)] = buf.Bytes()
 		}
 	}
+	b.manager.SendBatch(messages)
 }
 
 func (b *CodedMBRB) HandleIncoming(fromID core.NodeID, payload []byte) {
@@ -578,6 +579,7 @@ func (b *CodedMBRB) evaluateDelivery() {
 				Index: iIndex,
 			}
 
+			messages := make(map[core.NodeID][]byte)
 			for j := 1; j <= b.n; j++ {
 				proofJ, err := vc.Open(poly, j, b.pk)
 				if err != nil {
@@ -598,9 +600,10 @@ func (b *CodedMBRB) evaluateDelivery() {
 				}
 				var buf bytes.Buffer
 				if err := gob.NewEncoder(&buf).Encode(bundleMsg); err == nil {
-					go b.manager.Send(core.NodeID(j-1), buf.Bytes())
+					messages[core.NodeID(j-1)] = buf.Bytes()
 				}
 			}
+			b.manager.SendBatch(messages)
 		}
 	}
 

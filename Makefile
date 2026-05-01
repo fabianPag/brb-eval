@@ -5,7 +5,7 @@ T ?= -1
 D ?= 0
 TWINSSENDER ?= false
 NUMSILENT ?= 0
-NUMISOLATED ?= 0
+NUMMSGDROPS ?= 0
 
 .PHONY: build clean sim sim-fast
 
@@ -23,5 +23,5 @@ sim: build sim-fast
 sim-fast:
 	@mkdir -p ./evaluations/sim
 	@rm -rf ./evaluations/sim/*
-	./evaluations/scripts/sim/generate_shadow_config.sh $(PEERS) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D) $(TWINSSENDER) $(NUMSILENT) $(NUMISOLATED)
+	./evaluations/scripts/sim/generate_shadow_config.sh $(PEERS) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D) $(TWINSSENDER) $(NUMSILENT) $(NUMMSGDROPS)
 	cd ./evaluations/sim && shadow shadow.yaml

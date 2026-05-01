@@ -78,7 +78,7 @@ func main() {
 
 	metricsInstance := metrics.New()
 
-	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, config.Role, metricsInstance)
+	mgr := manager.New(core.NodeID(*nodeID), tcpTransport, config.Role, config.NumMsgDrops, config.HonestNodes, metricsInstance)
 
 	sentHashString := ""
 

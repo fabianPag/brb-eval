@@ -14,7 +14,7 @@ func main() {
 	dFlag := flag.Int("d", 0, "The d value in the n > 3t + 2d formula (-1 to infer max, requires t to be set)")
 	algorithmFlag := flag.String("algorithm", "codedmbrb", "Algorithm used (bracha, afrt, codedmbrb)")
 	numSilent := flag.Int("numSilent", 0, "Number of nodes to be Byzantine silent")
-	numIsolated := flag.Int("numIsolated", 0, "Number of nodes to isolate simulating Message Adversary")
+	numMsgDrops := flag.Int("numMsgDrops", 0, "Number of messages dropped by the Message Adversary per broadcast")
 	payloadSize := flag.Int("payloadSize", 1000, "Size of payload to broadcast in bytes")
 	saveMetrics := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
 	twinsSender := flag.Bool("twinsSender", false, "Enable Twins sender mode")
@@ -48,7 +48,7 @@ func main() {
 		os.Exit(1)
 	}
 
-	contr := controller.New(*targetNodes, t, d, *algorithmFlag, *payloadSize, *twinsSender, *numSilent, *numIsolated)
+	contr := controller.New(*targetNodes, t, d, *algorithmFlag, *payloadSize, *twinsSender, *numSilent, *numMsgDrops)
 	err := contr.Run(*listenAddr, *saveMetrics)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)

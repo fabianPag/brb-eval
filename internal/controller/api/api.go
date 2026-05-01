@@ -26,10 +26,12 @@ type PrivateCryptoParams struct {
 
 type Config struct {
 	Peers               map[int]PeerInfo    `json:"peers"`
-	Role                string              `json:"role"` // "honest", "twins_sender", "silent", "isolated"
+	Role                string              `json:"role"` // "honest", "twins_sender", "silent"
 	DesignatedSender    int                 `json:"designated_sender"`
 	T                   int                 `json:"t"`
 	D                   int                 `json:"d"`
+	NumMsgDrops         int                 `json:"num_msg_drops"`
+	HonestNodes         []int               `json:"honest_nodes"`
 	PublicCryptoParams  PublicCryptoParams  `json:"public_crypto_params"`
 	PrivateCryptoParams PrivateCryptoParams `json:"private_crypto_params"`
 	Algorithm           string              `json:"algorithm"`

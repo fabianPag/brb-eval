@@ -5,8 +5,8 @@ import "time"
 type NodeID int32
 
 type Manager interface {
-	Send(to NodeID, msg []byte)
 	Broadcast(msg []byte)
+	SendBatch(messages map[NodeID][]byte)
 	OnReceive(handler MessageHandler)
 	ID() NodeID
 	NumPeers() int
