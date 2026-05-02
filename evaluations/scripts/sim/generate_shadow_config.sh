@@ -9,6 +9,7 @@ D=${6:-0}
 TWINSSENDER=${7:-false}
 NUMSILENT=${8:-0}
 NUMMSGDROPS=${9:-0}
+EXPECTED_FINAL_STATE=${10:-0}
 
 if [ -z "$NUM_PEERS" ] || [ -z "$OUTPUT_FILE" ]; then
   echo "Usage: $0 <num_peers> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_msg_drops]"
@@ -31,7 +32,7 @@ hosts:
     - path: ../../bin/controller
       args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D -twinsSender=$TWINSSENDER -numSilent=$NUMSILENT -numMsgDrops=$NUMMSGDROPS"
       start_time: 0s 
-      expected_final_state: {exited: 0}
+      expected_final_state: {exited: $EXPECTED_FINAL_STATE}
 EOF
 
 for (( i=0; i<$NUM_PEERS; i++ ))
@@ -43,6 +44,6 @@ do
     - path: ../../bin/node
       args: "-id=$i -addr=peer$i:8080 -controller=controller:9000"
       start_time: 1s
-      expected_final_state: {exited: 0}
+      expected_final_state: {exited: $EXPECTED_FINAL_STATE}
 EOF
 done

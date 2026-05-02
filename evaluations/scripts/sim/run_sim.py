@@ -20,8 +20,14 @@ repo_root = script_dir.parent.parent.parent
 sim_dir = repo_root / "evaluations" / "sim"
 results_dir = repo_root / "evaluations" / "results" / "sim" / "raw"
 config_script = script_dir / "generate_shadow_config.sh"
+bin_dir = repo_root / "bin"
 
 algorithms = ["bracha", "afrt", "codedmbrb"]
+
+# Build binaries if they don't exist. Feel free to remove but I thought it would be more complete for a run script
+if not (bin_dir / "node").exists() or not (bin_dir / "controller").exists():
+    print("Building binaries...")
+    subprocess.run(["make", "build"], cwd=repo_root, check=True)
 
 results_dir.mkdir(parents=True, exist_ok=True)
 sim_dir.mkdir(parents=True, exist_ok=True)
@@ -47,6 +53,8 @@ try:
         if shadow_data.exists():
             shutil.rmtree(shadow_data)
 
+        expected_final_state = 0 if byzantine < node_count / 3 else 1
+
         subprocess.run(
             [
                 str(config_script),
@@ -56,6 +64,10 @@ try:
                 str(payload_size),
                 str(byzantine),
                 str(dropped),
+                "false",
+                "0",
+                "0",
+                str(expected_final_state),
             ],
             check=True,
         )
