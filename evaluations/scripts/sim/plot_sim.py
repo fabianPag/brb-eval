@@ -3,6 +3,7 @@ import argparse
 import pandas as pd
 import matplotlib.pyplot as plt
 import seaborn as sns
+import numpy as np
 from pathlib import Path
 
 sns.set_style("whitegrid")
@@ -125,3 +126,111 @@ for orig_payload in sorted(df_total["payload_size"].unique()):
     fig.savefig(out_file, bbox_inches="tight")
     plt.close(fig)
     print(f"Plot saved to {out_file}")
+
+# Additional plots for delivering nodes and messages sent vs Byzantine nodes
+
+def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
+    if df_subset["t"].nunique() < 2:
+        return
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    width = 0.18
+
+    for i, algo in enumerate(algorithm_order):
+        algo_data = df_subset[df_subset["algorithm"] == algo].sort_values("t")
+        if not algo_data.empty:
+            offset = (i - 1) * width
+            ax.bar(
+                algo_data["t"] + offset, 
+                algo_data[y_column], 
+                width, 
+                label=algo, 
+                color=color_map[algo]
+            )
+
+    # format x-axis to show full range
+    n = df_subset["n"].iloc[0]
+    ax.set_xticks(np.arange(0, n))
+    ax.set_xlim(-0.6, n - 0.4)
+    
+    # draw n/3 threshold Line
+    threshold = n / 3
+    ax.axvline(x=threshold, color="gray", linestyle="--", linewidth=1.5)
+    ax.text(
+        threshold, 
+        ax.get_ylim()[1] * 1.02, 
+        "t < n/3", 
+        color="gray", 
+        ha="center", 
+        va="bottom", 
+        fontsize=11, 
+        style="italic"
+    )
+
+    ax.set_xlabel("Byzantine Nodes (t)", fontsize=11, labelpad=10)
+    ax.set_ylabel(y_label, fontsize=11, labelpad=10)
+    ax.set_title(title, pad=20)
+    ax.legend(loc="upper right", frameon=True)
+    ax.grid(axis="y", color="lightgray", linestyle="-", linewidth=0.7, alpha=0.7)
+    ax.grid(axis="x", visible=False)
+    ax.spines['top'].set_visible(False)
+    ax.spines['right'].set_visible(False)
+
+    fig.savefig(out_filename, bbox_inches="tight")
+    plt.close(fig)
+    print(f"Bar plot saved to {out_filename}")
+
+df_delivering = (
+    df[df["delivery_time"].notna()]
+    .groupby(["algorithm", "n", "payload_size", "t"])
+    .size()
+    .reset_index(name="raw_count")
+)
+
+df_delivering["delivering_nodes"] = df_delivering.apply(
+    lambda row: row["n"] - row["t"] if row["raw_count"] > 0 and row["t"] < row["n"]/3 else 0, 
+    axis=1
+)
+df_delivering["algorithm"] = df_delivering["algorithm"].replace(
+    {"bracha": "Bracha", "afrt": "AFRT", "codedmbrb": "Coded MBRB"}
+)
+
+df_avg_msgs = (
+    df.groupby(["algorithm", "n", "payload_size", "t"])["messages_sent"]
+    .mean()
+    .reset_index()
+)
+
+df_avg_msgs["messages_sent"] = df_avg_msgs["messages_sent"] * (
+    (df_avg_msgs["n"] - df_avg_msgs["t"]) / df_avg_msgs["n"]
+)
+df_avg_msgs["algorithm"] = df_avg_msgs["algorithm"].replace(
+    {"bracha": "Bracha", "afrt": "AFRT", "codedmbrb": "Coded MBRB"}
+)
+
+for n in sorted(df_delivering["n"].unique()):
+    for payload_size in sorted(df_delivering[df_delivering["n"] == n]["payload_size"].unique()):
+        
+        # Delivering Nodes Chart
+        subset_delivering = df_delivering[
+            (df_delivering["n"] == n) & (df_delivering["payload_size"] == payload_size)
+        ]
+        generate_bft_bar_chart(
+            df_subset=subset_delivering,
+            y_column="delivering_nodes",
+            y_label="Delivering Nodes (L)",
+            title=f"Byzantine Threshold: Delivering Nodes (n={n}, payload={payload_size}B)",
+            out_filename=plots_dir / f"figure_delivering_nodes_vs_byzantine_{n}nodes_{payload_size}bytes.pdf"
+        )
+
+        # Average Messages Chart
+        subset_msgs = df_avg_msgs[
+            (df_avg_msgs["n"] == n) & (df_avg_msgs["payload_size"] == payload_size)
+        ]
+        generate_bft_bar_chart(
+            df_subset=subset_msgs,
+            y_column="messages_sent",
+            y_label="Messages Sent (Avg. per Node)",
+            title=f"Byzantine Threshold: Message Overhead (n={n}, payload={payload_size}B)",
+            out_filename=plots_dir / f"figure_avg_messages_vs_byzantine_{n}nodes_{payload_size}bytes.pdf"
+        )
