@@ -10,7 +10,7 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument("-r", "--runs", type=int, default=10)
 parser.add_argument("-n", "--nodes", nargs="+", type=int, required=True)
-parser.add_argument("-p", "--payloads", nargs="+", type=int, required=True)
+parser.add_argument("-p", "--payloads", nargs="+", type=str, required=True)
 parser.add_argument("-t", "--byzantine", nargs="+", type=int, default=[0])
 parser.add_argument("-d", "--dropped", nargs="+", type=int, default=[0])
 args = parser.parse_args()
@@ -38,6 +38,22 @@ configurations = list(
         args.dropped,
     )
 )
+
+
+def to_bytes(s):
+    """Used to store payload size in filenames as bytes."""
+    s = s.upper().strip()
+    try:
+        if s.endswith("MB"):
+            return int(float(s[:-2]) * 1_000_000)
+        if s.endswith("KB"):
+            return int(float(s[:-2]) * 1_000)
+        if s.endswith("B"):
+            return int(float(s[:-1]))
+        return int(s)
+    except ValueError:
+        return s
+
 
 try:
     for config in tqdm(configurations, desc="Progress", unit="config"):
@@ -70,7 +86,7 @@ try:
                 out_file = (
                     results_dir
                     / algorithm
-                    / f"perf_{algorithm}_{node_count}nodes_{payload_size}bytes_t{byzantine}_d{dropped}_run{run}_node{i}.txt"
+                    / f"perf_{algorithm}_{node_count}nodes_{to_bytes(payload_size)}bytes_t{byzantine}_d{dropped}_run{run}_node{i}.txt"
                 )
 
                 p = subprocess.Popen(

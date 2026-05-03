@@ -1,6 +1,6 @@
 PEERS ?= 4
 ALGORITHM ?= codedmbrb
-PAYLOADSIZE ?= 1000
+PAYLOADSIZE ?= 1KB
 T ?= -1
 D ?= 0
 TWINSSENDER ?= false

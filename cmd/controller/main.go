@@ -5,8 +5,38 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"strconv"
 	"strings"
 )
+
+func parsePayloadSize(s string) (int, error) {
+	s = strings.ToUpper(strings.TrimSpace(s))
+	var multiplier float64 = 1.0
+
+	switch {
+	case strings.HasSuffix(s, "MB"):
+		multiplier = 1000 * 1000
+		s = strings.TrimSuffix(s, "MB")
+	case strings.HasSuffix(s, "KB"):
+		multiplier = 1000
+		s = strings.TrimSuffix(s, "KB")
+	case strings.HasSuffix(s, "B"):
+		s = strings.TrimSuffix(s, "B")
+	default:
+		return 0, fmt.Errorf("invalid payload size '%s': missing unit (B, KB, MB)", s)
+	}
+
+	val, err := strconv.ParseFloat(s, 64)
+	if err != nil {
+		return 0, fmt.Errorf("invalid numeric value '%s': %v", s, err)
+	}
+
+	if val <= 0 {
+		return 0, fmt.Errorf("payload size must be positive, got %g", val)
+	}
+
+	return int(val * multiplier), nil
+}
 
 func main() {
 	listenAddr := flag.String("addr", "", "Listen address")
@@ -16,19 +46,25 @@ func main() {
 	algorithmFlag := flag.String("algorithm", "codedmbrb", "Algorithm used (bracha, afrt, codedmbrb)")
 	numSilent := flag.Int("numSilent", 0, "Number of nodes to be Byzantine silent")
 	numMsgDrops := flag.Int("numMsgDrops", 0, "Number of messages dropped by the Message Adversary per broadcast")
-	payloadSize := flag.Int("payloadSize", 1000, "Size of payload to broadcast in bytes")
+	payloadSizeFlag := flag.String("payloadSize", "1KB", "Size of payload (e.g., 100B, 1KB, 2MB)")
 	saveMetrics := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
 	twinsSender := flag.Bool("twinsSender", false, "Enable Twins sender mode")
 
 	flag.Parse()
 	if *targetNodes <= 0 || *listenAddr == "" {
-		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<bytes>] [-saveMetrics=<true|false>]")
+		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<size>] [-saveMetrics=<true|false>]")
 		os.Exit(1)
 	}
 
 	t := *tFlag
 	d := *dFlag
 	algorithm := strings.ToLower(*algorithmFlag)
+
+	payloadSize, err := parsePayloadSize(*payloadSizeFlag)
+	if err != nil {
+		fmt.Printf("Error parsing payload size: %v\n", err)
+		os.Exit(1)
+	}
 
 	if t == -1 && d == -1 {
 		fmt.Println("Cannot infer both t and d. Please provide at least one explicit threshold.")
@@ -55,11 +91,6 @@ func main() {
 		os.Exit(1)
 	}
 
-	if *payloadSize <= 0 {
-		fmt.Printf("Invalid payload size: %d. Must be positive.\n", *payloadSize)
-		os.Exit(1)
-	}
-
 	// The sender will never be silent, its either honest or twins_sender
 	if *numSilent < 0 || *numSilent > *targetNodes-1 {
 		fmt.Printf("Invalid numSilent: %d. Must be between 0 and %d (n-1).\n", *numSilent, *targetNodes-1)
@@ -74,8 +105,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	contr := controller.New(*targetNodes, t, d, algorithm, *payloadSize, *twinsSender, *numSilent, *numMsgDrops)
-	err := contr.Run(*listenAddr, *saveMetrics)
+	contr := controller.New(*targetNodes, t, d, algorithm, payloadSize, *twinsSender, *numSilent, *numMsgDrops)
+	err = contr.Run(*listenAddr, *saveMetrics)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)
 		os.Exit(1)

@@ -9,7 +9,7 @@ from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
 parser.add_argument("-n", "--nodes", nargs="+", type=int, required=True)
-parser.add_argument("-p", "--payloads", nargs="+", type=int, required=True)
+parser.add_argument("-p", "--payloads", nargs="+", type=str, required=True)
 parser.add_argument("-t", "--byzantine", nargs="+", type=int, default=[0])
 parser.add_argument("-d", "--dropped", nargs="+", type=int, default=[0])
 args = parser.parse_args()
@@ -40,12 +40,28 @@ configurations = list(
     )
 )
 
+
+def to_bytes(s):
+    """Used to store payload size in filenames as bytes."""
+    s = s.upper().strip()
+    try:
+        if s.endswith("MB"):
+            return int(float(s[:-2]) * 1_000_000)
+        if s.endswith("KB"):
+            return int(float(s[:-2]) * 1_000)
+        if s.endswith("B"):
+            return int(float(s[:-1]))
+        return int(s)
+    except ValueError:
+        return s
+
+
 try:
     for config in tqdm(configurations, desc="Progress", unit="config"):
         algorithm, payload_size, node_count, byzantine, dropped = config
 
         tqdm.write(
-            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size}B | t={byzantine} | d={dropped}"
+            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={byzantine} | d={dropped}"
         )
 
         shadow_data = sim_dir / "shadow.data"
@@ -86,7 +102,7 @@ try:
             save_name = (
                 results_dir
                 / algorithm
-                / f"metrics_{algorithm}_{node_count}nodes_{payload_size}bytes_t{byzantine}_d{dropped}.json"
+                / f"metrics_{algorithm}_{node_count}nodes_{to_bytes(payload_size)}bytes_t{byzantine}_d{dropped}.json"
             )
             shutil.copy(metrics_file, save_name)
         else:
