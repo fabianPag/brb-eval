@@ -210,7 +210,10 @@ df_avg_msgs["algorithm"] = df_avg_msgs["algorithm"].replace(
 
 for n in sorted(df_delivering["n"].unique()):
     for payload_size in sorted(df_delivering[df_delivering["n"] == n]["payload_size"].unique()):
-        
+
+        payload_size_mb = payload_size / 1_000_000
+        payload_str = f"{payload_size_mb:g}"
+
         # Delivering Nodes Chart
         subset_delivering = df_delivering[
             (df_delivering["n"] == n) & (df_delivering["payload_size"] == payload_size)
@@ -219,7 +222,7 @@ for n in sorted(df_delivering["n"].unique()):
             df_subset=subset_delivering,
             y_column="delivering_nodes",
             y_label="Delivering Nodes (L)",
-            title=f"Byzantine Threshold: Delivering Nodes (n={n}, payload={payload_size}B)",
+            title=f"Byzantine Threshold: Delivering Nodes (n={n}, Payload Size={payload_str} MB)",
             out_filename=plots_dir / f"figure_delivering_nodes_vs_byzantine_{n}nodes_{payload_size}bytes.pdf"
         )
 
@@ -231,6 +234,6 @@ for n in sorted(df_delivering["n"].unique()):
             df_subset=subset_msgs,
             y_column="messages_sent",
             y_label="Messages Sent (Avg. per Node)",
-            title=f"Byzantine Threshold: Message Overhead (n={n}, payload={payload_size}B)",
+            title=f"Byzantine Threshold: Message Overhead (n={n}, Payload Size={payload_str} MB)",
             out_filename=plots_dir / f"figure_avg_messages_vs_byzantine_{n}nodes_{payload_size}bytes.pdf"
         )
