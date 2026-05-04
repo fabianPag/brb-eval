@@ -51,10 +51,19 @@ def to_bytes(s):
             return int(float(s[:-2]) * 1_000)
         if s.endswith("B"):
             return int(float(s[:-1]))
-        return int(s)
+        raise ValueError
     except ValueError:
-        return s
+        raise ValueError(
+            f"Invalid payload format: '{s}'. Expected formats like '100B', '1KB', '1MB'."
+        )
 
+
+for p in args.payloads:
+    try:
+        to_bytes(p)
+    except ValueError as e:
+        print(f"Error in input arguments: {e}")
+        sys.exit(1)
 
 try:
     for config in tqdm(configurations, desc="Progress", unit="config"):
