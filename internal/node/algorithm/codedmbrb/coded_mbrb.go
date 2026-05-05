@@ -52,6 +52,7 @@ type CodedMBRB struct {
 	hasDelivered      bool
 	hasSigned         bool
 	signedFor         string
+	storedProofs      map[string]map[int][]byte
 }
 
 type MBRBMessage struct {
@@ -67,7 +68,7 @@ type MBRBMessage struct {
 
 type NetworkFragment struct {
 	Data  []byte // Reed-Solomon shard bytes
-	Proof []byte // Serialized kzg.OpeningProof (\pi_j)
+	Proof []byte // Serialized kzg.OpeningProof (pi_j)
 	Index int    // The node index (j)
 }
 
@@ -148,6 +149,7 @@ func NewCodedMBRB(m core.Manager, t int, d int, senderID int, publicCryptoParams
 		hasSentForward:    make(map[string]bool),
 		hasSentBundle:     make(map[string]bool),
 		savedThresh:       make(map[string][]byte),
+		storedProofs:      make(map[string]map[int][]byte),
 	}
 }
 
@@ -168,19 +170,49 @@ func (b *CodedMBRB) cloneSignatures(src map[int][]byte) map[int][]byte {
 }
 
 func (b *CodedMBRB) validateShareSet(commitment []byte, shares map[int][]byte) bool {
-	if len(shares) == 0 {
-		return false
-	}
-	senderSig, ok := shares[b.senderID]
-	if !ok || !b.verifyShareByID(commitment, b.senderID, senderSig) {
+	if len(shares) == 0 || len(shares) > 2 {
 		return false
 	}
 
+	senderSig, ok := shares[b.senderID]
+	if !ok {
+		return false
+	}
+
+	cKey := string(commitment)
+	var verifySender bool
+	needsVerification := make(map[int][]byte)
+
+	b.mu.Lock()
+	stored := b.storedShares[cKey]
+
+	if stored == nil || !bytes.Equal(stored[b.senderID], senderSig) {
+		verifySender = true
+	}
+
 	for signerID, sig := range shares {
+		if signerID == b.senderID {
+			continue
+		}
+		if stored != nil && bytes.Equal(stored[signerID], sig) {
+			continue
+		}
+		needsVerification[signerID] = sig
+	}
+	b.mu.Unlock()
+
+	if verifySender {
+		if !b.verifyShareByID(commitment, b.senderID, senderSig) {
+			return false
+		}
+	}
+
+	for signerID, sig := range needsVerification {
 		if !b.verifyShareByID(commitment, signerID, sig) {
 			return false
 		}
 	}
+
 	return true
 }
 
@@ -201,7 +233,7 @@ func (b *CodedMBRB) signAndRecord(commitment []byte, cKey string) ([]byte, error
 	return sig, nil
 }
 
-// Maps to Line 1: function computeFragVecCommit(m)
+// (1) Function COMPUTEFRAG_VECCOMMIT(m) is
 func (b *CodedMBRB) computeFragVecCommit(message []byte) (kzg.Digest, map[int]NetworkFragment, error) {
 	shards, err := b.rsEncoder.Split(message)
 	if err != nil {
@@ -237,7 +269,41 @@ func (b *CodedMBRB) verifyShardProof(C kzg.Digest, shard []byte, pi_j kzg.Openin
 	return vc.Verify(C, pi_j, b.vk, claimedValue, j)
 }
 
-// Maps to Line 17: function MBRBbroadcast(m)
+func (b *CodedMBRB) verifyAndStoreFragment(cKey string, frag *NetworkFragment, C kzg.Digest) bool {
+	if frag == nil {
+		return true
+	}
+
+	b.mu.Lock()
+	if b.storedFragments[cKey] == nil {
+		b.storedFragments[cKey] = make(map[int][]byte)
+		b.storedProofs[cKey] = make(map[int][]byte)
+	}
+	storedData, exists := b.storedFragments[cKey][frag.Index]
+	storedProof := b.storedProofs[cKey][frag.Index]
+	b.mu.Unlock()
+
+	if exists && len(storedData) > 0 {
+		return bytes.Equal(storedData, frag.Data) && bytes.Equal(storedProof, frag.Proof)
+	}
+
+	var pi kzg.OpeningProof
+	if err := deserializeProof(&pi, frag.Proof); err != nil {
+		return false
+	}
+	if !b.verifyShardProof(C, frag.Data, pi, frag.Index) {
+		return false
+	}
+
+	b.mu.Lock()
+	b.storedFragments[cKey][frag.Index] = append([]byte(nil), frag.Data...)
+	b.storedProofs[cKey][frag.Index] = append([]byte(nil), frag.Proof...)
+	b.mu.Unlock()
+
+	return true
+}
+
+// (17) Function MBRBBROADCAST(m) is
 func (b *CodedMBRB) InitiateBroadcast(message []byte) {
 	if b.nodeIndex != b.senderID {
 		fmt.Printf("only designated sender %d can broadcast", b.senderID)
@@ -248,14 +314,15 @@ func (b *CodedMBRB) InitiateBroadcast(message []byte) {
 	lengthBuf := make([]byte, 4)
 	binary.BigEndian.PutUint32(lengthBuf, uint32(len(message)))
 	framedMessage := append(lengthBuf, message...)
-	// Line 18: <C, {\tilde{m}_i}, {\pi_i}> = computeFragVecCommit(m)
+
+	// (18) (C, (m_j, pi_j, j)_j) <- COMPUTEFRAG_VECCOMMIT(m)
 	C, fragments, err := b.computeFragVecCommit(framedMessage)
 	if err != nil {
 		return
 	}
 
 	cSerializer := C.Marshal()
-	// Line 19
+	// (19) sig_s <- (ts_sign_share_s(C), s)
 	senderSig, err := ts.SignShare(cSerializer, b.privateShare)
 	if err != nil {
 		return
@@ -264,7 +331,7 @@ func (b *CodedMBRB) InitiateBroadcast(message []byte) {
 
 	safeSenderShares := b.cloneSignatures(senderShares)
 
-	// Line 20: for all j in N, send <send, C, \tilde{m}_j, j, \pi_j> to node j
+	// (20) comm(v_1,...,v_n) where v_j = <SEND, C, (m_j, pi_j, j), sig_s>
 	messages := make(map[core.NodeID][]byte)
 	for j := 1; j <= b.n; j++ {
 		nf := fragments[j]
@@ -303,7 +370,7 @@ func (b *CodedMBRB) HandleIncoming(fromID core.NodeID, payload []byte) {
 	b.evaluateDelivery()
 }
 
-// Maps to Line 21: upon receiving <send, C, v, j, \pi_j> from the designated sender
+// (21) Upon <SEND, C', (m_i, pi_i, i), sig_s> arrival from p_s do
 func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	var C kzg.Digest
 	if err := C.Unmarshal(msg.Commitment); err != nil || msg.Fragment == nil {
@@ -323,23 +390,20 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 		return
 	}
 
+	// (22) if not ISVALID(C', {(m_i, pi_i, i)}, {sig_s}, isThreshSig=False) then return
 	if !b.validateShareSet(msg.Commitment, msg.SignatureShares) {
 		return
 	}
 
 	b.mu.Lock()
+	// (23) if p_i already executed line 25 or signed some commitment C'' != C' then return
 	if b.hasExecutedLine25[cKey] || b.hasSigned && b.signedFor != cKey {
 		b.mu.Unlock()
 		return
 	}
 	b.mu.Unlock()
 
-	var pi_j kzg.OpeningProof
-	if err := deserializeProof(&pi_j, msg.Fragment.Proof); err != nil {
-		return
-	}
-	// Line 22: if not has executed line 25 and isValid(C, v, pi_j)
-	if !b.verifyShardProof(C, msg.Fragment.Data, pi_j, msg.Fragment.Index) {
+	if !b.verifyAndStoreFragment(cKey, msg.Fragment, C) {
 		return
 	}
 
@@ -352,8 +416,10 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	if b.storedShares[cKey] == nil {
 		b.storedShares[cKey] = make(map[int][]byte)
 	}
-	for signerID, sig := range msg.SignatureShares {
-		b.storedShares[cKey][signerID] = append([]byte(nil), sig...)
+
+	// (24) sig_i <- (ts_sign_share_i(C'), i); store m_i, sig_s and sig_i for C'
+	if senderSig, ok := msg.SignatureShares[b.senderID]; ok {
+		b.storedShares[cKey][b.senderID] = append([]byte(nil), senderSig...)
 	}
 
 	sigma_i, err := b.signAndRecord(msg.Commitment, cKey)
@@ -362,18 +428,13 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 		return
 	}
 
-	if b.storedFragments[cKey] == nil {
-		b.storedFragments[cKey] = make(map[int][]byte)
-	}
-	b.storedFragments[cKey][msg.Fragment.Index] = append([]byte(nil), msg.Fragment.Data...)
-
 	b.hasSentForward[cKey] = true
 	sharesForForward := b.cloneSignatures(msg.SignatureShares)
 	sharesForForward[b.nodeIndex] = append([]byte(nil), sigma_i...)
 	b.hasExecutedLine25[cKey] = true
 	b.mu.Unlock()
 
-	// Line 25: forall k in N, send <forward, C, \sigma_i, v, j, \pi_j>
+	// (25) broadcast <FORWARD, C', (m_i, pi_i, i), {sig_s, sig_i}>
 	forwardMsg := MBRBMessage{
 		Type:            "FORWARD",
 		Initiator:       msg.Initiator,
@@ -387,7 +448,7 @@ func (b *CodedMBRB) uponSendArrival(from core.NodeID, msg *MBRBMessage) {
 	}
 }
 
-// Maps to Line 26: upon receiving <forward, C, \sigma_l, v, j, \pi_j> from node l
+// (26) Upon <FORWARD, C', fragtuple_j, sigs_j={sig_s, sig_j}> arrival from p_j do
 func (b *CodedMBRB) uponForwardArrival(from core.NodeID, msg *MBRBMessage) {
 	var C kzg.Digest
 	if err := C.Unmarshal(msg.Commitment); err != nil {
@@ -399,6 +460,7 @@ func (b *CodedMBRB) uponForwardArrival(from core.NodeID, msg *MBRBMessage) {
 		return
 	}
 
+	// (27) if not ISVALID(C', {fragtuple_j}, sigs_j, isThreshSig=False) then return
 	if !b.validateShareSet(msg.Commitment, msg.SignatureShares) {
 		return
 	}
@@ -407,21 +469,27 @@ func (b *CodedMBRB) uponForwardArrival(from core.NodeID, msg *MBRBMessage) {
 		return
 	}
 
+	b.mu.Lock()
+	if b.hasSigned && b.signedFor != cKey {
+		b.mu.Unlock()
+		return
+	}
+	b.mu.Unlock()
+
+	// (30) if fragtuple_j != nil then
 	if msg.Fragment != nil {
 		if msg.Fragment.Index != int(from)+1 {
 			return
 		}
 
-		var pi_j kzg.OpeningProof
-		if err := deserializeProof(&pi_j, msg.Fragment.Proof); err != nil {
-			return
-		}
-		if !b.verifyShardProof(C, msg.Fragment.Data, pi_j, msg.Fragment.Index) {
+		// (31) (m_j, pi_j, j) <- fragtuple_j; store m_j for C'
+		if !b.verifyAndStoreFragment(cKey, msg.Fragment, C) {
 			return
 		}
 	}
 
 	b.mu.Lock()
+	// (28) if p_i already signed some commitment C'' != C' then return
 	if b.hasSigned && b.signedFor != cKey {
 		b.mu.Unlock()
 		return
@@ -430,20 +498,21 @@ func (b *CodedMBRB) uponForwardArrival(from core.NodeID, msg *MBRBMessage) {
 	if b.storedShares[cKey] == nil {
 		b.storedShares[cKey] = make(map[int][]byte)
 	}
-	for signerID, sig := range msg.SignatureShares {
-		b.storedShares[cKey][signerID] = append([]byte(nil), sig...)
-	}
 
-	if msg.Fragment != nil {
-		if b.storedFragments[cKey] == nil {
-			b.storedFragments[cKey] = make(map[int][]byte)
-		}
-		b.storedFragments[cKey][msg.Fragment.Index] = append([]byte(nil), msg.Fragment.Data...)
+	// (29) store sigs_j for C'
+	if senderSig, ok := msg.SignatureShares[b.senderID]; ok {
+		b.storedShares[cKey][b.senderID] = append([]byte(nil), senderSig...)
+	}
+	if forwarderSig, ok := msg.SignatureShares[int(from)]; ok {
+		b.storedShares[cKey][int(from)] = append([]byte(nil), forwarderSig...)
 	}
 
 	shouldSendSentinel := false
 	var sigma_i []byte
+
+	// (32) if no FORWARD message sent yet then
 	if !b.hasSentForward[cKey] {
+		// (33) sig_i <- (ts_sign_share_i(C'), i); store sig_i for C'
 		sig, err := b.signAndRecord(msg.Commitment, cKey)
 		if err == nil {
 			sigma_i = sig
@@ -463,13 +532,13 @@ func (b *CodedMBRB) uponForwardArrival(from core.NodeID, msg *MBRBMessage) {
 		sharesForForward[b.nodeIndex] = append([]byte(nil), sigma_i...)
 	}
 
-	// Line 31-34: if has_sent_forward = false, sign and forward sentinel value
 	if shouldSendSentinel {
+		// (34) broadcast <FORWARD, C', nil, {sig_s, sig_i}>
 		forwardMsg := MBRBMessage{
 			Type:            "FORWARD",
 			Initiator:       msg.Initiator,
 			Commitment:      msg.Commitment,
-			Fragment:        nil, // Sending sentinel value
+			Fragment:        nil,
 			SignatureShares: sharesForForward,
 		}
 		var buf bytes.Buffer
@@ -479,7 +548,7 @@ func (b *CodedMBRB) uponForwardArrival(from core.NodeID, msg *MBRBMessage) {
 	}
 }
 
-// Maps to Line 35: wait until \exists C' st get_thresh_sig(C') != nil && len(v) >= k && not evaluated
+// (35) When exists C' : GETTHRESHSIG(C') != nil and |{stored m_j for C'}| >= k
 func (b *CodedMBRB) evaluateDelivery() {
 	b.mu.Lock()
 	if b.hasDelivered {
@@ -522,7 +591,7 @@ func (b *CodedMBRB) evaluateDelivery() {
 
 	CBytes := []byte(targetCKey)
 
-	// Get Thresh Sig
+	// (39) Sigma_C <- GETTHRESHSIG(C)
 	if !hasThresh {
 		agg, err := ts.Combine(targetShares, b.tau)
 		if err != nil || !ts.Verify(CBytes, agg, b.masterPubKey) {
@@ -530,23 +599,23 @@ func (b *CodedMBRB) evaluateDelivery() {
 		}
 		targetThreshSig = agg
 		b.mu.Lock()
-		b.savedThresh[targetCKey] = agg
+		b.savedThresh[targetCKey] = append([]byte(nil), agg...)
 		b.mu.Unlock()
 	}
 
-	// Line 36: m <- ECC^{-1}(\tilde{m}_{j \in E_C})
+	// (36) m_i <- ECC^-1(m_1, ..., m_n)
 	reconstructedShards, err := b.reconstructAllShards(targetFragments)
 	if err != nil {
 		return
 	}
 
-	// Line 37: C'' <- vec_commit_hash(m)
+	// (37) (C, (m'_j, pi'_j, j)_j) <- COMPUTEFRAG_VECCOMMIT(m_i)
 	recreatedCommitment, poly, err := vc.HashAndCommit(reconstructedShards, b.pk)
 	if err != nil {
 		return
 	}
 
-	// Line 38: If the reconstructed digest doesn't match the commitment, return
+	// (38) if C' != C then return
 	if string(recreatedCommitment.Marshal()) != targetCKey {
 		return
 	}
@@ -557,63 +626,82 @@ func (b *CodedMBRB) evaluateDelivery() {
 	}
 
 	b.mu.Lock()
-	sendBundle := false
-	if !b.hasSentBundle[targetCKey] {
-		b.hasSentBundle[targetCKey] = true
-		sendBundle = true
+	if b.hasDelivered {
+		b.mu.Unlock()
+		return
 	}
-	doDeliver := !b.hasDelivered
-	if doDeliver {
-		b.hasDelivered = true
-	}
+
+	b.hasDelivered = true
+	b.hasSentBundle[targetCKey] = true
 	b.mu.Unlock()
 
-	// Line 40: forall j in N, send <bundle, C, frag_i, frag_j, \Sigma_C> to j
-	if sendBundle {
-		iIndex := b.nodeIndex + 1
+	iIndex := b.nodeIndex + 1
+
+	b.mu.Lock()
+	storedProofI, hasStoredI := b.storedProofs[targetCKey][iIndex]
+	b.mu.Unlock()
+
+	var proofIBytes []byte
+	if hasStoredI {
+		proofIBytes = append([]byte(nil), storedProofI...)
+	} else {
 		proofI, err := vc.Open(poly, iIndex, b.pk)
 		if err == nil {
-			fragI := NetworkFragment{
-				Data:  append([]byte(nil), reconstructedShards[iIndex-1]...),
-				Proof: serializeProof(proofI),
-				Index: iIndex,
-			}
-
-			messages := make(map[core.NodeID][]byte)
-			for j := 1; j <= b.n; j++ {
-				proofJ, err := vc.Open(poly, j, b.pk)
-				if err != nil {
-					continue
-				}
-				fragJ := NetworkFragment{
-					Data:  append([]byte(nil), reconstructedShards[j-1]...),
-					Proof: serializeProof(proofJ),
-					Index: j,
-				}
-				bundleMsg := MBRBMessage{
-					Type:               "BUNDLE",
-					Initiator:          b.senderID,
-					Commitment:         CBytes,
-					BundleFragI:        &fragI,
-					BundleFragJ:        &fragJ,
-					ThresholdSignature: targetThreshSig,
-				}
-				var buf bytes.Buffer
-				if err := gob.NewEncoder(&buf).Encode(bundleMsg); err == nil {
-					messages[core.NodeID(j-1)] = buf.Bytes()
-				}
-			}
-			b.manager.SendBatch(messages)
+			proofIBytes = serializeProof(proofI)
 		}
 	}
 
-	if doDeliver {
-		// Line 41: trigger MBRBdeliver(m)
-		b.manager.Deliver(core.NodeID(b.senderID), decodedMsg)
+	if proofIBytes != nil {
+		fragI := NetworkFragment{
+			Data:  append([]byte(nil), reconstructedShards[iIndex-1]...),
+			Proof: proofIBytes,
+			Index: iIndex,
+		}
+
+		// (40) comm(v_1,...,v_n) where v_j = <BUNDLE, C, (m'_i, pi'_i, i), (m'_j, pi'_j, j), Sigma_C>
+		messages := make(map[core.NodeID][]byte)
+		for j := 1; j <= b.n; j++ {
+			b.mu.Lock()
+			storedProof, hasStored := b.storedProofs[targetCKey][j]
+			b.mu.Unlock()
+
+			var proofBytes []byte
+			if hasStored {
+				proofBytes = append([]byte(nil), storedProof...)
+			} else {
+				p, err := vc.Open(poly, j, b.pk)
+				if err != nil {
+					continue
+				}
+				proofBytes = serializeProof(p)
+			}
+
+			fragJ := NetworkFragment{
+				Data:  append([]byte(nil), reconstructedShards[j-1]...),
+				Proof: proofBytes,
+				Index: j,
+			}
+			bundleMsg := MBRBMessage{
+				Type:               "BUNDLE",
+				Initiator:          b.senderID,
+				Commitment:         CBytes,
+				BundleFragI:        &fragI,
+				BundleFragJ:        &fragJ,
+				ThresholdSignature: targetThreshSig,
+			}
+			var buf bytes.Buffer
+			if err := gob.NewEncoder(&buf).Encode(bundleMsg); err == nil {
+				messages[core.NodeID(j-1)] = buf.Bytes()
+			}
+		}
+		b.manager.SendBatch(messages)
 	}
+
+	// (41) MBRBDELIVER(m_i)
+	b.manager.Deliver(core.NodeID(b.senderID), decodedMsg)
 }
 
-// Maps to Line 42: upon receiving <bundle, C, E_C, \sigma>
+// (42) Upon <BUNDLE, C', (m'_j, pi'_j, j), fragtuple_i, Sigma> arrival from p_j do
 func (b *CodedMBRB) uponBundleArrival(from core.NodeID, msg *MBRBMessage) {
 	b.mu.Lock()
 	hasDelivered := b.hasDelivered
@@ -628,7 +716,7 @@ func (b *CodedMBRB) uponBundleArrival(from core.NodeID, msg *MBRBMessage) {
 		return
 	}
 
-	// Line 43: Validate threshold signature
+	// (43) Validate threshold signature
 	if !ts.Verify(msg.Commitment, msg.ThresholdSignature, b.masterPubKey) {
 		return
 	}
@@ -638,53 +726,28 @@ func (b *CodedMBRB) uponBundleArrival(from core.NodeID, msg *MBRBMessage) {
 		return
 	}
 
-	validI := false
-	if msg.BundleFragI != nil {
-		if msg.BundleFragI.Index != int(from)+1 {
-			return
-		}
-		var pi kzg.OpeningProof
-		if err := deserializeProof(&pi, msg.BundleFragI.Proof); err == nil {
-			validI = b.verifyShardProof(C, msg.BundleFragI.Data, pi, msg.BundleFragI.Index)
-		}
+	if msg.BundleFragI == nil || msg.BundleFragI.Index != int(from)+1 {
+		return
 	}
 
-	validJ := false
-	if msg.BundleFragJ != nil {
-		if msg.BundleFragJ.Index != b.nodeIndex+1 {
-			return
-		}
-		var pi kzg.OpeningProof
-		if err := deserializeProof(&pi, msg.BundleFragJ.Proof); err == nil {
-			validJ = b.verifyShardProof(C, msg.BundleFragJ.Data, pi, msg.BundleFragJ.Index)
-		}
-	} else {
-		validJ = true // Sentinel value (nil) is valid for this fragment
+	if msg.BundleFragJ != nil && msg.BundleFragJ.Index != b.nodeIndex+1 {
+		return
 	}
 
-	if !validI || !validJ {
+	// (43) Validate fragments
+	// (44) store (m'_j, pi'_j, j) and (47) store (m'_i, pi'_i, i) for C'
+	if !b.verifyAndStoreFragment(cKey, msg.BundleFragI, C) ||
+		!b.verifyAndStoreFragment(cKey, msg.BundleFragJ, C) {
 		return
 	}
 
 	b.mu.Lock()
+	// (44 continued) store Sigma for C'
 	if b.savedThresh[cKey] == nil {
 		b.savedThresh[cKey] = append([]byte(nil), msg.ThresholdSignature...)
 	}
 
-	if msg.BundleFragI != nil {
-		if b.storedFragments[cKey] == nil {
-			b.storedFragments[cKey] = make(map[int][]byte)
-		}
-		b.storedFragments[cKey][msg.BundleFragI.Index] = append([]byte(nil), msg.BundleFragI.Data...)
-	}
-
-	if msg.BundleFragJ != nil {
-		if b.storedFragments[cKey] == nil {
-			b.storedFragments[cKey] = make(map[int][]byte)
-		}
-		b.storedFragments[cKey][msg.BundleFragJ.Index] = append([]byte(nil), msg.BundleFragJ.Data...)
-	}
-
+	// (45) if no BUNDLE message has been sent yet and fragtuple_i != nil then
 	shouldForward := !b.hasSentBundle[cKey] && msg.BundleFragJ != nil && msg.BundleFragJ.Index == b.nodeIndex+1
 	if shouldForward {
 		b.hasSentBundle[cKey] = true
@@ -692,6 +755,7 @@ func (b *CodedMBRB) uponBundleArrival(from core.NodeID, msg *MBRBMessage) {
 	b.mu.Unlock()
 
 	if shouldForward {
+		// (46) (m'_i, pi'_i, i) <- fragtuple_i
 		forwardBundle := MBRBMessage{
 			Type:               "BUNDLE",
 			Initiator:          msg.Initiator,
@@ -702,6 +766,7 @@ func (b *CodedMBRB) uponBundleArrival(from core.NodeID, msg *MBRBMessage) {
 		}
 		var buf bytes.Buffer
 		if err := gob.NewEncoder(&buf).Encode(forwardBundle); err == nil {
+			// (48) broadcast <BUNDLE, C', (m'_i, pi'_i, i), nil, Sigma>
 			b.manager.Broadcast(buf.Bytes())
 		}
 	}
