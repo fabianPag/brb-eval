@@ -75,6 +75,13 @@ func (b *Bracha) HandleIncoming(fromID core.NodeID, payload []byte) {
 	msg.Sender = fromID
 	initID := msg.Initiator
 
+	b.mu.Lock()
+    if b.delivered[initID] && b.readySent[initID] {
+        b.mu.Unlock()
+        return 
+    }
+    b.mu.Unlock()
+
 	valueHash := sha256.Sum256(msg.Value)
 
 	var doEcho, doReady, doDeliver bool
