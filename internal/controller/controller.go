@@ -41,6 +41,7 @@ type Controller struct {
 	allDone             chan struct{}
 	allMetricsReceived  chan struct{}
 	twinsSender         bool
+	gracePeriod         time.Duration
 }
 
 type metricsFile struct {
@@ -55,7 +56,7 @@ type metricsFile struct {
 	NodeMetrics      []api.MetricsData `json:"node_metrics"`
 }
 
-func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool, numSilent int, numMsgDrops int) *Controller {
+func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool, numSilent int, numMsgDrops int, gracePeriod time.Duration) *Controller {
 	return &Controller{
 		targetNodes:        targetNodes,
 		designatedSender:   0,
@@ -75,6 +76,7 @@ func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twins
 		allDone:            make(chan struct{}),
 		allMetricsReceived: make(chan struct{}),
 		twinsSender:        twinsSender,
+		gracePeriod:        gracePeriod,
 	}
 }
 
@@ -114,9 +116,9 @@ func (c *Controller) handleDone(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Node %d is done\n", id)
 
 		if len(c.doneNodes) == c.targetNodes {
-			fmt.Println("All nodes done. Waiting for 3 seconds to let any in-flight algorithm messages arrive.")
+			fmt.Printf("All nodes done. Waiting for %v to let any in-flight algorithm messages arrive.\n", c.gracePeriod)
 			go func() {
-				time.Sleep(3 * time.Second)
+				time.Sleep(c.gracePeriod)
 				fmt.Println("Unblocking all nodes.")
 				close(c.allDone)
 			}()

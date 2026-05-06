@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 func parsePayloadSize(s string) (int, error) {
@@ -49,10 +50,16 @@ func main() {
 	payloadSizeFlag := flag.String("payloadSize", "1KB", "Size of payload (e.g., 100B, 1KB, 2MB)")
 	saveMetrics := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
 	twinsSender := flag.Bool("twinsSender", false, "Enable Twins sender mode")
+	gracePeriodFlag := flag.Duration("gracePeriod", 3*time.Second, "Time to wait after all nodes are done before unblocking (e.g., 3s, 500ms, 0s)")
 
 	flag.Parse()
 	if *targetNodes <= 0 || *listenAddr == "" {
 		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<size>] [-saveMetrics=<true|false>]")
+		os.Exit(1)
+	}
+
+	if *gracePeriodFlag < 0 {
+		fmt.Printf("Invalid gracePeriod (%v): duration cannot be negative.\n", *gracePeriodFlag)
 		os.Exit(1)
 	}
 
@@ -105,7 +112,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	contr := controller.New(*targetNodes, t, d, algorithm, payloadSize, *twinsSender, *numSilent, *numMsgDrops)
+	contr := controller.New(*targetNodes, t, d, algorithm, payloadSize, *twinsSender, *numSilent, *numMsgDrops, *gracePeriodFlag)
+
 	err = contr.Run(*listenAddr, *saveMetrics)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)
