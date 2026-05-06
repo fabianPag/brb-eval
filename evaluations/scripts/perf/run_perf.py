@@ -80,7 +80,7 @@ try:
                 [
                     str(repo_root / "bin" / "controller"),
                     f"-addr={controller_addr}",
-                    f"-targetNodes={node_count}",
+                    f"-n={node_count}",
                     f"-t={byzantine}",
                     f"-d={dropped}",
                     f"-algorithm={algorithm}",

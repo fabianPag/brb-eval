@@ -40,21 +40,28 @@ func parsePayloadSize(s string) (int, error) {
 }
 
 func main() {
-	listenAddr := flag.String("addr", "", "Listen address")
-	targetNodes := flag.Int("targetNodes", -1, "Amount of nodes before allowing p2p network start")
+	listenAddrFlag := flag.String("addr", "", "Listen address")
+	nFlag := flag.Int("n", -1, "Total number of nodes (N) in the network")
 	tFlag := flag.Int("t", -1, "The t value in the n > 3t + 2d formula (-1 to infer max, requires d to be set)")
 	dFlag := flag.Int("d", 0, "The d value in the n > 3t + 2d formula (-1 to infer max, requires t to be set)")
 	algorithmFlag := flag.String("algorithm", "codedmbrb", "Algorithm used (bracha, afrt, codedmbrb)")
-	numSilent := flag.Int("numSilent", 0, "Number of nodes to be Byzantine silent")
-	numMsgDrops := flag.Int("numMsgDrops", 0, "Number of messages dropped by the Message Adversary per broadcast")
+	numSilentFlag := flag.Int("numSilent", 0, "Number of nodes to be Byzantine silent")
+	numMsgDropsFlag := flag.Int("numMsgDrops", 0, "Number of messages dropped by the Message Adversary per broadcast")
 	payloadSizeFlag := flag.String("payloadSize", "1KB", "Size of payload (e.g., 100B, 1KB, 2MB)")
-	saveMetrics := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
-	twinsSender := flag.Bool("twinsSender", false, "Enable Twins sender mode")
+	saveMetricsFlag := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
+	twinsSenderFlag := flag.Bool("twinsSender", false, "Enable Twins sender mode")
 	gracePeriodFlag := flag.Duration("gracePeriod", 3*time.Second, "Time to wait after all nodes are done before unblocking (e.g., 3s, 500ms, 0s)")
 
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: controller -addr=<host:port> -n=<num> [options]\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+	}
+
 	flag.Parse()
-	if *targetNodes <= 0 || *listenAddr == "" {
-		fmt.Println("Usage: controller -addr=<host:port> -targetNodes=<num> [-t=<num>] [-d=<num>] [-algo=<name>] [-payloadSize=<size>] [-saveMetrics=<true|false>]")
+
+	if *nFlag <= 0 || *listenAddrFlag == "" {
+		flag.Usage()
 		os.Exit(1)
 	}
 
@@ -65,6 +72,7 @@ func main() {
 
 	t := *tFlag
 	d := *dFlag
+	n := *nFlag
 	algorithm := strings.ToLower(*algorithmFlag)
 
 	payloadSize, err := parsePayloadSize(*payloadSizeFlag)
@@ -74,47 +82,60 @@ func main() {
 	}
 
 	if t == -1 && d == -1 {
-		fmt.Println("Cannot infer both t and d. Please provide at least one explicit threshold.")
+		fmt.Fprintf(os.Stderr, "Cannot infer both t and d. Please provide at least one explicit threshold.\n")
 		os.Exit(1)
 	}
 
 	if t == -1 {
-		t = max((*targetNodes-2*d-1)/3, 0)
+		t = max((n-2*d-1)/3, 0)
 		fmt.Printf("Inferred max Byzantine threshold: t=%d\n", t)
 	}
 
 	if d == -1 {
-		d = max((*targetNodes-3*t-1)/2, 0)
+		d = max((n-3*t-1)/2, 0)
 		fmt.Printf("Inferred max Message Adversary threshold: d=%d\n", d)
 	}
 
-	if 3*t+2*d >= *targetNodes {
-		fmt.Printf("Invalid configuration: 3t + 2d must be strictly less than n. Got t=%d, d=%d, n=%d\n", t, d, *targetNodes)
+	if 3*t+2*d >= n {
+		fmt.Fprintf(os.Stderr, "Invalid configuration: 3t + 2d must be strictly less than n. Got t=%d, d=%d, n=%d\n", t, d, n)
 		os.Exit(1)
 	}
 
 	if algorithm != "bracha" && algorithm != "afrt" && algorithm != "codedmbrb" {
-		fmt.Printf("Invalid algorithm: %s. Supported algorithms are: bracha, afrt, codedmbrb\n", *algorithmFlag)
+		fmt.Fprintf(os.Stderr, "Invalid algorithm: %s. Supported algorithms are: bracha, afrt, codedmbrb\n", *algorithmFlag)
 		os.Exit(1)
 	}
 
 	// The sender will never be silent, its either honest or twins_sender
-	if *numSilent < 0 || *numSilent > *targetNodes-1 {
-		fmt.Printf("Invalid numSilent: %d. Must be between 0 and %d (n-1).\n", *numSilent, *targetNodes-1)
+	if *numSilentFlag < 0 || *numSilentFlag > n-1 {
+		fmt.Fprintf(os.Stderr, "Invalid numSilent: %d. Must be between 0 and %d (n-1).\n", *numSilentFlag, n-1)
 		os.Exit(1)
 	}
 
-	// Adversary only targets honest nodes, and it can't drop messages from a node to itself, so the max possible drops is n - numSilent - 1.
-	maxPossibleDrops := max(*targetNodes-*numSilent-1, 0)
+	// Adversary only targets honest nodes, and it can't drop messages from a node to itself
+	maxPossibleDrops := max(n-*numSilentFlag-1, 0)
 
-	if *numMsgDrops < 0 || *numMsgDrops > maxPossibleDrops {
-		fmt.Printf("Invalid numMsgDrops (%d): Only %d honest external targets available (with %d silent nodes).\n", *numMsgDrops, maxPossibleDrops, *numSilent)
+	if *numMsgDropsFlag < 0 || *numMsgDropsFlag > maxPossibleDrops {
+		fmt.Fprintf(os.Stderr, "Invalid numMsgDrops (%d): Only %d honest external targets available (with %d silent nodes).\n", *numMsgDropsFlag, maxPossibleDrops, *numSilentFlag)
 		os.Exit(1)
 	}
 
-	contr := controller.New(*targetNodes, t, d, algorithm, payloadSize, *twinsSender, *numSilent, *numMsgDrops, *gracePeriodFlag)
+	opts := controller.Options{
+		N:                n,
+		T:                t,
+		D:                d,
+		Algorithm:        algorithm,
+		PayloadSize:      payloadSize,
+		DesignatedSender: 0,
+		TwinsSender:      *twinsSenderFlag,
+		NumSilent:        *numSilentFlag,
+		NumMsgDrops:      *numMsgDropsFlag,
+		GracePeriod:      *gracePeriodFlag,
+	}
 
-	err = contr.Run(*listenAddr, *saveMetrics)
+	contr := controller.New(opts)
+
+	err = contr.Run(*listenAddrFlag, *saveMetricsFlag)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)
 		os.Exit(1)

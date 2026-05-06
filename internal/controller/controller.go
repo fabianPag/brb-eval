@@ -18,17 +18,22 @@ import (
 	"github.com/consensys/gnark-crypto/ecc/bn254/kzg"
 )
 
+type Options struct {
+	N                int
+	T                int
+	D                int
+	Algorithm        string
+	PayloadSize      int
+	DesignatedSender int
+	TwinsSender      bool
+	NumSilent        int
+	NumMsgDrops      int
+	GracePeriod      time.Duration
+}
+
 type Controller struct {
 	mu                  sync.Mutex
-	targetNodes         int
-	designatedSender    int
-	t                   int
-	d                   int
-	numSilent           int
-	numMsgDrops         int
-	algorithm           string
-	payloadSize         int
-	requiredDeliveries  int
+	opts                Options
 	nodeMetrics         []api.MetricsData
 	registeredNodes     map[int]api.PeerInfo
 	readyNodes          map[int]bool
@@ -40,8 +45,6 @@ type Controller struct {
 	privateCryptoParams map[int]api.PrivateCryptoParams
 	allDone             chan struct{}
 	allMetricsReceived  chan struct{}
-	twinsSender         bool
-	gracePeriod         time.Duration
 }
 
 type metricsFile struct {
@@ -56,17 +59,11 @@ type metricsFile struct {
 	NodeMetrics      []api.MetricsData `json:"node_metrics"`
 }
 
-func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twinsSender bool, numSilent int, numMsgDrops int, gracePeriod time.Duration) *Controller {
+func New(opts Options) *Controller {
 	return &Controller{
-		targetNodes:        targetNodes,
-		designatedSender:   0,
-		t:                  t,
-		d:                  d,
-		numSilent:          numSilent,
-		numMsgDrops:        numMsgDrops,
-		algorithm:          algorithm,
-		payloadSize:        payloadSize,
-		nodeMetrics:        make([]api.MetricsData, targetNodes),
+		opts: opts,
+
+		nodeMetrics:        make([]api.MetricsData, opts.N),
 		registeredNodes:    make(map[int]api.PeerInfo),
 		readyNodes:         make(map[int]bool),
 		doneNodes:          make(map[int]bool),
@@ -75,13 +72,11 @@ func New(targetNodes int, t int, d int, algorithm string, payloadSize int, twins
 		allReady:           make(chan struct{}),
 		allDone:            make(chan struct{}),
 		allMetricsReceived: make(chan struct{}),
-		twinsSender:        twinsSender,
-		gracePeriod:        gracePeriod,
 	}
 }
 
 func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
-	c.InitializeCrypto(c.targetNodes)
+	c.InitializeCrypto()
 
 	http.HandleFunc("/register", c.handleRegister)
 	http.HandleFunc("/ready", c.handleReady)
@@ -115,10 +110,10 @@ func (c *Controller) handleDone(w http.ResponseWriter, r *http.Request) {
 		c.doneNodes[id] = true
 		fmt.Printf("Node %d is done\n", id)
 
-		if len(c.doneNodes) == c.targetNodes {
-			fmt.Printf("All nodes done. Waiting for %v to let any in-flight algorithm messages arrive.\n", c.gracePeriod)
+		if len(c.doneNodes) == c.opts.N {
+			fmt.Printf("All nodes done. Waiting for %v to let any in-flight algorithm messages arrive.\n", c.opts.GracePeriod)
 			go func() {
-				time.Sleep(c.gracePeriod)
+				time.Sleep(c.opts.GracePeriod)
 				fmt.Println("Unblocking all nodes.")
 				close(c.allDone)
 			}()
@@ -140,7 +135,7 @@ func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if metrics.NodeID < 0 || metrics.NodeID >= c.targetNodes {
+	if metrics.NodeID < 0 || metrics.NodeID >= c.opts.N {
 		http.Error(w, "Invalid Node ID", http.StatusBadRequest)
 		return
 	}
@@ -148,7 +143,7 @@ func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 	c.nodeMetrics[metrics.NodeID] = metrics
 	c.metricsReceived[metrics.NodeID] = true
-	allReceived := len(c.metricsReceived) == c.targetNodes
+	allReceived := len(c.metricsReceived) == c.opts.N
 	c.mu.Unlock()
 
 	fmt.Printf("Node %d sent metrics\n", metrics.NodeID)
@@ -164,14 +159,14 @@ func (c *Controller) saveMetricsToFile(filename string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	output := metricsFile{
-		Algorithm:        c.algorithm,
-		PayloadSize:      c.payloadSize,
-		N:                c.targetNodes,
-		T:                c.t,
-		D:                c.d,
-		DesignatedSender: c.designatedSender,
-		NumSilent:        c.numSilent,
-		NumMsgDrops:      c.numMsgDrops,
+		Algorithm:        c.opts.Algorithm,
+		PayloadSize:      c.opts.PayloadSize,
+		N:                c.opts.N,
+		T:                c.opts.T,
+		D:                c.opts.D,
+		DesignatedSender: c.opts.DesignatedSender,
+		NumSilent:        c.opts.NumSilent,
+		NumMsgDrops:      c.opts.NumMsgDrops,
 		NodeMetrics:      c.nodeMetrics,
 	}
 
@@ -198,7 +193,7 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 	c.mu.Lock()
 
 	c.registeredNodes[node.ID] = node
-	allRegistered := len(c.registeredNodes) == c.targetNodes
+	allRegistered := len(c.registeredNodes) == c.opts.N
 	if allRegistered {
 		fmt.Println("All nodes registered. Sending configs.")
 		close(c.allRegistered)
@@ -211,13 +206,13 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 
 	role := "honest"
-	if node.ID == c.designatedSender {
-		if c.twinsSender {
+	if node.ID == c.opts.DesignatedSender {
+		if c.opts.TwinsSender {
 			role = "twins_sender"
 		} else {
 			role = "honest"
 		}
-	} else if int(node.ID) >= c.targetNodes-c.numSilent {
+	} else if int(node.ID) >= c.opts.N-c.opts.NumSilent {
 		role = "silent"
 	}
 
@@ -225,8 +220,8 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 	defer c.mu.Unlock()
 
 	honestNodes := make([]int, 0)
-	for i := 0; i < c.targetNodes; i++ {
-		if i < c.targetNodes-c.numSilent {
+	for i := 0; i < c.opts.N; i++ {
+		if i < c.opts.N-c.opts.NumSilent {
 			honestNodes = append(honestNodes, i)
 		}
 	}
@@ -234,15 +229,15 @@ func (c *Controller) handleRegister(w http.ResponseWriter, r *http.Request) {
 	config := api.Config{
 		Peers:               c.registeredNodes,
 		Role:                role,
-		DesignatedSender:    c.designatedSender,
-		T:                   c.t,
-		D:                   c.d,
-		NumMsgDrops:         c.numMsgDrops,
+		DesignatedSender:    c.opts.DesignatedSender,
+		T:                   c.opts.T,
+		D:                   c.opts.D,
+		NumMsgDrops:         c.opts.NumMsgDrops,
 		HonestNodes:         honestNodes,
 		PublicCryptoParams:  c.publicCryptoParams,
 		PrivateCryptoParams: c.privateCryptoParams[node.ID],
-		Algorithm:           c.algorithm,
-		PayloadSize:         c.payloadSize,
+		Algorithm:           c.opts.Algorithm,
+		PayloadSize:         c.opts.PayloadSize,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -269,14 +264,14 @@ func (c *Controller) handleReady(w http.ResponseWriter, r *http.Request) {
 		c.readyNodes[id] = true
 		fmt.Printf("Node %d is ready\n", id)
 
-		if len(c.readyNodes) == c.targetNodes {
+		if len(c.readyNodes) == c.opts.N {
 			fmt.Println("All nodes ready. Unblocking.")
-			fmt.Printf("Starting algorithm %s with %d nodes, t=%d, d=%d\n", c.algorithm, c.targetNodes, c.t, c.d)
+			fmt.Printf("Starting algorithm %s with %d nodes, t=%d, d=%d\n", c.opts.Algorithm, c.opts.N, c.opts.T, c.opts.D)
 			close(c.allReady)
 		}
 	}
 
-	allReady := len(c.readyNodes) == c.targetNodes
+	allReady := len(c.readyNodes) == c.opts.N
 	c.mu.Unlock()
 
 	// Block until all nodes ready
@@ -361,22 +356,22 @@ func (c *Controller) SetupKZG(n int) ([]byte, []byte) {
 	return pkBuf.Bytes(), vkBuf.Bytes()
 }
 
-func (c *Controller) InitializeCrypto(n int) {
-	pkBytes, vkBytes := c.SetupKZG(n)
+func (c *Controller) InitializeCrypto() {
+	pkBytes, vkBytes := c.SetupKZG(c.opts.N)
 
-	blsShares, masterPubKeyBytes, nodePubKeysBytes, err := SetupBLSThreshold(n, c.t)
+	blsShares, masterPubKeyBytes, nodePubKeysBytes, err := SetupBLSThreshold(c.opts.N, c.opts.T)
 	if err != nil {
 		panic(err)
 	}
 
-	k := n - c.t - 2*c.d
-	if k <= 0 || k > n {
-		panic(fmt.Sprintf("invalid coding params: require 1 <= k <= n and k <= n - t - 2d, got n=%d t=%d d=%d k=%d", n, c.t, c.d, k))
+	k := c.opts.N - c.opts.T - 2*c.opts.D
+	if k <= 0 || k > c.opts.N {
+		panic(fmt.Sprintf("invalid coding params: require 1 <= k <= n and k <= n - t - 2d, got n=%d t=%d d=%d k=%d", c.opts.N, c.opts.T, c.opts.D, k))
 	}
 
 	c.publicCryptoParams = api.PublicCryptoParams{
 		NumDataShards:     k,
-		NumParityShards:   n - k,
+		NumParityShards:   c.opts.N - k,
 		PKBytes:           pkBytes,
 		VKBytes:           vkBytes,
 		MasterPubKeyBytes: masterPubKeyBytes,

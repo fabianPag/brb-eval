@@ -1,6 +1,6 @@
 #!/bin/bash
 
-NUM_PEERS=${1}
+N=${1}
 OUTPUT_FILE=${2}
 ALGORITHM=${3}
 PAYLOADSIZE=${4}
@@ -9,10 +9,11 @@ D=${6:-0}
 TWINSSENDER=${7:-false}
 NUMSILENT=${8:-0}
 NUMMSGDROPS=${9:-0}
-EXPECTED_FINAL_STATE=${10:-0}
+GRACEPERIOD=${10:-3s}
+EXPECTED_FINAL_STATE=${11:-0}
 
-if [ -z "$NUM_PEERS" ] || [ -z "$OUTPUT_FILE" ]; then
-  echo "Usage: $0 <num_peers> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_msg_drops]"
+if [ -z "$N" ] || [ -z "$OUTPUT_FILE" ]; then
+  echo "Usage: $0 <n> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_msg_drops] [grace_period] [expected_state]"
   echo "Algorithms: bracha, afrt, codedmbrb"
   exit 1
 fi
@@ -30,12 +31,12 @@ hosts:
     network_node_id: 0
     processes:
     - path: ../../bin/controller
-      args: "-addr=controller:9000 -targetNodes=$NUM_PEERS -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D -twinsSender=$TWINSSENDER -numSilent=$NUMSILENT -numMsgDrops=$NUMMSGDROPS"
+      args: "-addr=controller:9000 -n=$N -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D -twinsSender=$TWINSSENDER -numSilent=$NUMSILENT -numMsgDrops=$NUMMSGDROPS -gracePeriod=$GRACEPERIOD"
       start_time: 0s 
       expected_final_state: {exited: $EXPECTED_FINAL_STATE}
 EOF
 
-for (( i=0; i<$NUM_PEERS; i++ ))
+for (( i=0; i<$N; i++ ))
 do
   cat <<EOF >> $OUTPUT_FILE
   peer$i:
