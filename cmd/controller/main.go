@@ -51,6 +51,7 @@ func main() {
 	saveMetricsFlag := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
 	twinsSenderFlag := flag.Bool("twinsSender", false, "Enable Twins sender mode")
 	gracePeriodFlag := flag.Duration("gracePeriod", 3*time.Second, "Time to wait after all nodes are done before unblocking (e.g., 3s, 500ms, 0s)")
+	keepControllerAliveFlag := flag.Bool("keepControllerAlive", false, "Keep the controller alive after the test finishes")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: controller -addr=<host:port> -n=<num> [options]\n\n")
@@ -131,6 +132,7 @@ func main() {
 		NumSilent:        *numSilentFlag,
 		NumMsgDrops:      *numMsgDropsFlag,
 		GracePeriod:      *gracePeriodFlag,
+		KeepControllerAlive:        *keepControllerAliveFlag,
 	}
 
 	contr := controller.New(opts)

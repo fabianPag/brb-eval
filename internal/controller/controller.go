@@ -29,6 +29,7 @@ type Options struct {
 	NumSilent        int
 	NumMsgDrops      int
 	GracePeriod      time.Duration
+	KeepControllerAlive        bool
 }
 
 type Controller struct {
@@ -75,6 +76,38 @@ func New(opts Options) *Controller {
 	}
 }
 
+type statusResponse struct {
+	AllMetricsReceived   bool `json:"allMetricsReceived"`
+	AllNodesDone         bool `json:"allNodesDone"`
+	AllNodesReady        bool `json:"allNodesReady"`
+	AllNodesRegistered   bool `json:"allNodesRegistered"`
+	DoneCount            int  `json:"doneCount"`
+	MetricsReceivedCount int  `json:"metricsReceivedCount"`
+	ReadyCount           int  `json:"readyCount"`
+	RegisteredCount      int  `json:"registeredCount"`
+	TargetNodes          int  `json:"targetNodes"`
+}
+
+func (c *Controller) handleStatus(w http.ResponseWriter, r *http.Request) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	status := statusResponse{
+		AllMetricsReceived:   len(c.metricsReceived) == c.opts.N,
+		AllNodesDone:         len(c.doneNodes) == c.opts.N,
+		AllNodesReady:        len(c.readyNodes) == c.opts.N,
+		AllNodesRegistered:   len(c.registeredNodes) == c.opts.N,
+		DoneCount:            len(c.doneNodes),
+		MetricsReceivedCount: len(c.metricsReceived),
+		ReadyCount:           len(c.readyNodes),
+		RegisteredCount:      len(c.registeredNodes),
+		TargetNodes:          c.opts.N,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	json.NewEncoder(w).Encode(status)
+}
+
 func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
 	c.InitializeCrypto()
 
@@ -82,6 +115,11 @@ func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
 	http.HandleFunc("/ready", c.handleReady)
 	http.HandleFunc("/done", c.handleDone)
 	http.HandleFunc("/metrics", c.handleMetrics)
+
+	// endpoints used for GCP
+	http.HandleFunc("/status", c.handleStatus)
+	http.HandleFunc("/download/metrics", c.handleDownloadMetrics)
+
 	fmt.Println("Starting controller at", addr)
 
 	go http.ListenAndServe(addr, nil)
@@ -93,7 +131,42 @@ func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
 		}
 	}
 
+	// Keep controller alive for GCP
+	if c.opts.KeepControllerAlive {
+		fmt.Println("Test complete. Keeping controller alive to serve metric downloads...")
+		select {}
+	} else {
+		fmt.Println("Test complete. Exiting controller.")
+	}
+
 	return nil
+}
+
+func (c *Controller) handleDownloadMetrics(w http.ResponseWriter, r *http.Request) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	output := metricsFile{
+		Algorithm:        c.opts.Algorithm,
+		PayloadSize:      c.opts.PayloadSize,
+		N:                c.opts.N,
+		T:                c.opts.T,
+		D:                c.opts.D,
+		DesignatedSender: c.opts.DesignatedSender,
+		NumSilent:        c.opts.NumSilent,
+		NumMsgDrops:      c.opts.NumMsgDrops,
+		NodeMetrics:      c.nodeMetrics,
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	encoder := json.NewEncoder(w)
+	encoder.SetIndent("", "  ")
+
+	if err := encoder.Encode(output); err != nil {
+		fmt.Printf("[ERROR] Failed to serve metrics payload: %v\n", err)
+	}
 }
 
 func (c *Controller) handleDone(w http.ResponseWriter, r *http.Request) {
