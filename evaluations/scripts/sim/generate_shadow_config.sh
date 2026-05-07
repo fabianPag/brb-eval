@@ -10,10 +10,11 @@ TWINSSENDER=${7:-false}
 NUMSILENT=${8:-0}
 NUMMSGDROPS=${9:-0}
 EXPECTED_FINAL_STATE=${10:-0}
+CONTROLLER_BIN=${11:-"../../bin/controller"}
+NODE_BIN=${12:-"../../bin/node"}
 
 if [ -z "$N" ] || [ -z "$OUTPUT_FILE" ]; then
-  echo "Usage: $0 <n> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_msg_drops] [expected_state]"
-  echo "Algorithms: bracha, afrt, codedmbrb"
+  echo "Usage: $0 <n> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_msg_drops] [expected_state] [controller_path] [node_path]"
   exit 1
 fi
 
@@ -29,7 +30,7 @@ hosts:
   controller:
     network_node_id: 0
     processes:
-    - path: ../../bin/controller
+    - path: $CONTROLLER_BIN
       args: "-addr=controller:9000 -n=$N -algorithm=$ALGORITHM -payloadSize=$PAYLOADSIZE -t=$T -d=$D -twinsSender=$TWINSSENDER -numSilent=$NUMSILENT -numMsgDrops=$NUMMSGDROPS -metricsFile=metrics.json"
       start_time: 0s 
       expected_final_state: {exited: $EXPECTED_FINAL_STATE}
@@ -41,7 +42,7 @@ do
   peer$i:
     network_node_id: 0
     processes:
-    - path: ../../bin/node
+    - path: $NODE_BIN
       args: "-id=$i -addr=peer$i:8080 -controller=controller:9000"
       start_time: 1s
       expected_final_state: {exited: $EXPECTED_FINAL_STATE}

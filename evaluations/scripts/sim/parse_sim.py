@@ -24,9 +24,10 @@ for filepath in all_files:
         t = json_data.get("t", 0)
         d = json_data.get("d", 0)
 
+        env = json_data.get("env", "unknown")
+
         if "node_metrics" in json_data:
-            node_metrics = json_data["node_metrics"]
-            for metrics in node_metrics:
+            for metrics in json_data["node_metrics"]:
                 data.append(
                     {
                         "algorithm": algo,
@@ -42,11 +43,11 @@ for filepath in all_files:
                         "bytes_received": metrics.get("bytes_received", 0),
                         "messages_sent": metrics.get("messages_sent", 0),
                         "bytes_sent": metrics.get("bytes_sent", 0),
+                        "env": env,
                     }
                 )
         else:
             print("Warning: 'node_metrics' key not found")
-
 
 df = pd.DataFrame(data)
 df.to_csv(str(results_file), index=False)

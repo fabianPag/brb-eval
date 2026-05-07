@@ -3,8 +3,10 @@ import argparse
 import shutil
 import subprocess
 import itertools
+import json
 import sys
 from pathlib import Path
+import tempfile
 from tqdm import tqdm
 
 parser = argparse.ArgumentParser()
@@ -16,8 +18,6 @@ args = parser.parse_args()
 
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
-
-sim_dir = repo_root / "evaluations" / "sim"
 results_dir = repo_root / "evaluations" / "results" / "sim" / "raw"
 config_script = script_dir / "generate_shadow_config.sh"
 bin_dir = repo_root / "bin"
@@ -30,7 +30,6 @@ if not (bin_dir / "node").exists() or not (bin_dir / "controller").exists():
     subprocess.run(["make", "build"], cwd=repo_root, check=True)
 
 results_dir.mkdir(parents=True, exist_ok=True)
-sim_dir.mkdir(parents=True, exist_ok=True)
 for algo in algorithms:
     (results_dir / algo).mkdir(exist_ok=True)
 
@@ -42,7 +41,6 @@ configurations = list(
 
 
 def to_bytes(s):
-    """Used to store payload size in filenames as bytes."""
     s = s.upper().strip()
     try:
         if s.endswith("MB"):
@@ -53,75 +51,86 @@ def to_bytes(s):
             return int(float(s[:-1]))
         raise ValueError
     except ValueError:
-        raise ValueError(
-            f"Invalid payload format: '{s}'. Expected formats like '100B', '1KB', '1MB'."
-        )
+        raise ValueError(f"Invalid payload format: '{s}'")
 
 
 for p in args.payloads:
     try:
         to_bytes(p)
     except ValueError as e:
-        print(f"Error in input arguments: {e}")
+        print(f"Error: {e}")
         sys.exit(1)
 
 try:
     for config in tqdm(configurations, desc="Progress", unit="config"):
         algorithm, payload_size, node_count, byzantine, dropped = config
 
+        p_bytes = to_bytes(payload_size)
+        base_filename = f"metrics_{algorithm}_{node_count}nodes_{p_bytes}bytes_t{byzantine}_d{dropped}"
+        final_json_path = results_dir / algorithm / f"{base_filename}.json"
+
+        if final_json_path.exists():
+            continue
+
         tqdm.write(
             f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={byzantine} | d={dropped}"
         )
 
-        shadow_data = sim_dir / "shadow.data"
+        tmp_path = Path(tempfile.mkdtemp(prefix="sim_"))
 
-        if shadow_data.exists():
-            shutil.rmtree(shadow_data)
+        try:
+            yaml_path = tmp_path / "shadow.yaml"
+            abs_controller = str(repo_root / "bin" / "controller")
+            abs_node = str(repo_root / "bin" / "node")
 
-        expected_final_state = 0 if byzantine < node_count / 3 else 1
+            expected_final_state = 0 if byzantine < node_count / 3 else 1
 
-        subprocess.run(
-            [
-                str(config_script),
-                str(node_count),
-                str(sim_dir / "shadow.yaml"),
-                algorithm,
-                str(payload_size),
-                str(byzantine),
-                str(dropped),
-                "false",
-                "0",
-                "0",
-                str(expected_final_state),
-            ],
-            check=True,
-        )
-
-        subprocess.run(
-            ["shadow", "shadow.yaml"],
-            cwd=sim_dir,
-            check=True,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-
-        metrics_file = sim_dir / "shadow.data" / "hosts" / "controller" / "metrics.json"
-
-        if metrics_file.exists():
-            save_name = (
-                results_dir
-                / algorithm
-                / f"metrics_{algorithm}_{node_count}nodes_{to_bytes(payload_size)}bytes_t{byzantine}_d{dropped}.json"
+            subprocess.run(
+                [
+                    str(config_script),
+                    str(node_count),
+                    str(yaml_path),
+                    algorithm,
+                    str(payload_size),
+                    str(byzantine),
+                    str(dropped),
+                    "false",
+                    "0",
+                    "0",
+                    str(expected_final_state),
+                    abs_controller,
+                    abs_node,
+                ],
+                check=True,
+                stdout=subprocess.DEVNULL,
             )
-            shutil.copy(metrics_file, save_name)
-        else:
-            tqdm.write(
-                f"ERROR: Missing metrics for {algorithm} nodes={node_count} payload={payload_size} t={byzantine} d={dropped}"
+
+            subprocess.run(
+                ["shadow", "shadow.yaml"],
+                cwd=tmp_path,
+                check=True,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
+
+            metrics_source = (
+                tmp_path / "shadow.data" / "hosts" / "controller" / "metrics.json"
+            )
+
+            if metrics_source.exists():
+                with open(metrics_source, "r") as f:
+                    data = json.load(f)
+
+                data["env"] = "sim"
+
+                with open(final_json_path, "w") as f:
+                    json.dump(data, f, indent=2)
+            else:
+                tqdm.write(f"ERROR: Missing metrics for {base_filename}")
+
+        finally:
+            if tmp_path.exists():
+                shutil.rmtree(tmp_path)
 
 except KeyboardInterrupt:
     sys.exit(1)
-
-finally:
-    if sim_dir.exists():
-        shutil.rmtree(sim_dir)
