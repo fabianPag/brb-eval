@@ -22,7 +22,7 @@ script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
 bin_dir = repo_root / "bin"
 
-results_dir = repo_root / "evaluations" / "results" / "gcp" / "sim" / "raw"
+results_dir = repo_root / "evaluations" / "results" / "gcp" / "raw"
 
 algorithms = ["bracha", "afrt", "codedmbrb"]
 
@@ -139,9 +139,19 @@ try:
             continue
 
         # Download Metrics
-        sim_save_path = results_dir / algorithm / f"metrics_{algorithm}_{n}nodes_{p_bytes}bytes_t{t}_d{d}_run{run_idx}.json"
+        gcp_save_path = results_dir / algorithm / f"metrics_{algorithm}_{n}nodes_{p_bytes}bytes_t{t}_d{d}_run{run_idx}.json"
         try:
-            urllib.request.urlretrieve(f"http://{controller_public_ip}:8080/download/metrics", sim_save_path)
+            urllib.request.urlretrieve(f"http://{controller_public_ip}:8080/download/metrics", gcp_save_path)
+            
+            with open(gcp_save_path, "r") as f:
+                data = json.load(f)
+
+            data["env"] = "gcp"
+            data["run"] = run_idx
+
+            with open(gcp_save_path, "w") as f:
+                json.dump(data, f, indent=2)
+
         except Exception as e:
             tqdm.write(f"Failed to download metrics: {e}")
 
@@ -151,4 +161,4 @@ finally:
     subprocess.run([f"gcloud compute instances delete brb-controller --zone={args.zone} --quiet"], shell=True)
     delete_nodes = " & ".join([f"gcloud compute instances delete brb-node-{i} --zone={args.zone} --quiet" for i in range(max_nodes)]) + " & wait"
     subprocess.run(delete_nodes, shell=True)
-    print("Done! Check your evaluations/results/gcp/sim/raw folder.")
+    print("Done! Check your evaluations/results/gcp/raw folder.")
