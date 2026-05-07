@@ -6,7 +6,6 @@ D ?= 0
 TWINSSENDER ?= false
 NUMSILENT ?= 0
 NUMMSGDROPS ?= 0
-GRACEPERIOD ?= 3s
 EXPECTED_FINAL_STATE ?= 0
 
 .PHONY: build clean sim sim-fast
@@ -25,5 +24,5 @@ sim: build sim-fast
 sim-fast:
 	@mkdir -p ./evaluations/sim
 	@rm -rf ./evaluations/sim/*
-	./evaluations/scripts/sim/generate_shadow_config.sh $(N) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D) $(TWINSSENDER) $(NUMSILENT) $(NUMMSGDROPS) $(GRACEPERIOD) $(EXPECTED_FINAL_STATE)
+	./evaluations/scripts/sim/generate_shadow_config.sh $(N) ./evaluations/sim/shadow.yaml $(ALGORITHM) $(PAYLOADSIZE) $(T) $(D) $(TWINSSENDER) $(NUMSILENT) $(NUMMSGDROPS) $(EXPECTED_FINAL_STATE)
 	cd ./evaluations/sim && shadow shadow.yaml

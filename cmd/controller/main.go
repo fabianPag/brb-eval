@@ -48,7 +48,7 @@ func main() {
 	numSilentFlag := flag.Int("numSilent", 0, "Number of nodes to be Byzantine silent")
 	numMsgDropsFlag := flag.Int("numMsgDrops", 0, "Number of messages dropped by the Message Adversary per broadcast")
 	payloadSizeFlag := flag.String("payloadSize", "1KB", "Size of payload (e.g., 100B, 1KB, 2MB)")
-	saveMetricsFlag := flag.Bool("saveMetrics", true, "Should collected metrics be saved to file?")
+	metricsFileFlag := flag.String("metricsFile", "", "File path to save JSON metrics. If empty, metrics are not saved to disk but accessible through HTTP endpoint.")
 	twinsSenderFlag := flag.Bool("twinsSender", false, "Enable Twins sender mode")
 	gracePeriodFlag := flag.Duration("gracePeriod", 3*time.Second, "Time to wait after all nodes are done before unblocking (e.g., 3s, 500ms, 0s)")
 	keepControllerAliveFlag := flag.Bool("keepControllerAlive", false, "Keep the controller alive after the test finishes")
@@ -122,22 +122,22 @@ func main() {
 	}
 
 	opts := controller.Options{
-		N:                n,
-		T:                t,
-		D:                d,
-		Algorithm:        algorithm,
-		PayloadSize:      payloadSize,
-		DesignatedSender: 0,
-		TwinsSender:      *twinsSenderFlag,
-		NumSilent:        *numSilentFlag,
-		NumMsgDrops:      *numMsgDropsFlag,
-		GracePeriod:      *gracePeriodFlag,
-		KeepControllerAlive:        *keepControllerAliveFlag,
+		N:                   n,
+		T:                   t,
+		D:                   d,
+		Algorithm:           algorithm,
+		PayloadSize:         payloadSize,
+		DesignatedSender:    0,
+		TwinsSender:         *twinsSenderFlag,
+		NumSilent:           *numSilentFlag,
+		NumMsgDrops:         *numMsgDropsFlag,
+		GracePeriod:         *gracePeriodFlag,
+		KeepControllerAlive: *keepControllerAliveFlag,
 	}
 
 	contr := controller.New(opts)
 
-	err = contr.Run(*listenAddrFlag, *saveMetricsFlag)
+	err = contr.Run(*listenAddrFlag, *metricsFileFlag)
 	if err != nil {
 		fmt.Println("Failed to start controller:", err)
 		os.Exit(1)

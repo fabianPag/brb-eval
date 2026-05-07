@@ -19,17 +19,17 @@ import (
 )
 
 type Options struct {
-	N                int
-	T                int
-	D                int
-	Algorithm        string
-	PayloadSize      int
-	DesignatedSender int
-	TwinsSender      bool
-	NumSilent        int
-	NumMsgDrops      int
-	GracePeriod      time.Duration
-	KeepControllerAlive        bool
+	N                   int
+	T                   int
+	D                   int
+	Algorithm           string
+	PayloadSize         int
+	DesignatedSender    int
+	TwinsSender         bool
+	NumSilent           int
+	NumMsgDrops         int
+	GracePeriod         time.Duration
+	KeepControllerAlive bool
 }
 
 type Controller struct {
@@ -48,7 +48,7 @@ type Controller struct {
 	allMetricsReceived  chan struct{}
 }
 
-type metricsFile struct {
+type metricsExport struct {
 	Algorithm        string            `json:"algorithm"`
 	PayloadSize      int               `json:"payload_size"`
 	N                int               `json:"n"`
@@ -108,7 +108,7 @@ func (c *Controller) handleStatus(w http.ResponseWriter, r *http.Request) {
 	json.NewEncoder(w).Encode(status)
 }
 
-func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
+func (c *Controller) Run(addr string, metricsFile string) error {
 	c.InitializeCrypto()
 
 	http.HandleFunc("/register", c.handleRegister)
@@ -125,8 +125,8 @@ func (c *Controller) Run(addr string, shouldSaveMetrics bool) error {
 	go http.ListenAndServe(addr, nil)
 	<-c.allMetricsReceived
 
-	if shouldSaveMetrics {
-		if err := c.saveMetricsToFile("metrics.json"); err != nil {
+	if metricsFile != "" {
+		if err := c.saveMetricsToFile(metricsFile); err != nil {
 			fmt.Printf("[ERROR] Failed to save metrics: %v\n", err)
 		}
 	}
@@ -146,7 +146,7 @@ func (c *Controller) handleDownloadMetrics(w http.ResponseWriter, r *http.Reques
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
-	output := metricsFile{
+	output := metricsExport{
 		Algorithm:        c.opts.Algorithm,
 		PayloadSize:      c.opts.PayloadSize,
 		N:                c.opts.N,
@@ -228,10 +228,10 @@ func (c *Controller) handleMetrics(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (c *Controller) saveMetricsToFile(filename string) error {
+func (c *Controller) saveMetricsToFile(filepath string) error {
 	c.mu.Lock()
 	defer c.mu.Unlock()
-	output := metricsFile{
+	output := metricsExport{
 		Algorithm:        c.opts.Algorithm,
 		PayloadSize:      c.opts.PayloadSize,
 		N:                c.opts.N,
@@ -247,9 +247,9 @@ func (c *Controller) saveMetricsToFile(filename string) error {
 	if err != nil {
 		return err
 	}
-	err = os.WriteFile(filename, data, 0644)
+	err = os.WriteFile(filepath, data, 0644)
 	if err == nil {
-		fmt.Printf("Metrics saved to %s\n", filename)
+		fmt.Printf("Metrics saved to %s\n", filepath)
 	}
 	return err
 }

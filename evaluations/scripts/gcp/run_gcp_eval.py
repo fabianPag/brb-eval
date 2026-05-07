@@ -106,7 +106,7 @@ try:
         # Start Controller
         subprocess.run([
             "gcloud", "compute", "ssh", "brb-controller", f"--zone={args.zone}", "--tunnel-through-iap", "--quiet",
-            "--command", f"nohup ~/controller -addr=0.0.0.0:8080 -n={n} -algorithm={algorithm} -payloadSize={p_size} -t={t} -d={d} -saveMetrics=true -keepControllerAlive=true > ~/controller.log 2>&1 &"
+            "--command", f"nohup ~/controller -addr=0.0.0.0:8080 -n={n} -algorithm={algorithm} -payloadSize={p_size} -t={t} -d={d} -keepControllerAlive=true > ~/controller.log 2>&1 &"
         ])
         time.sleep(3) # Give controller time to bind port
 

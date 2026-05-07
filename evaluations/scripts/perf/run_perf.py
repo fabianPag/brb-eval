@@ -85,7 +85,7 @@ try:
                     f"-d={dropped}",
                     f"-algorithm={algorithm}",
                     f"-payloadSize={payload_size}",
-                    "-saveMetrics=false",
+                    f"-gracePeriod=1s",
                 ],
                 stdout=subprocess.DEVNULL,
             )
