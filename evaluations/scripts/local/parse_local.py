@@ -6,7 +6,7 @@ from pathlib import Path
 
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
-results_dir = repo_root / "evaluations" / "results" / "perf"
+results_dir = repo_root / "evaluations" / "results" / "local"
 results_file = results_dir / "metrics.csv"
 
 raw_dir = results_dir / "raw"

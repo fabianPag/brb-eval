@@ -17,7 +17,7 @@ args = parser.parse_args()
 
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
-results_dir = repo_root / "evaluations" / "results" / "perf" / "raw"
+results_dir = repo_root / "evaluations" / "results" / "local" / "raw"
 
 algorithms = ["bracha", "afrt", "codedmbrb"]
 
