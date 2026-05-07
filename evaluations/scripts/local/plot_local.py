@@ -59,7 +59,7 @@ df["algorithm"] = df["algorithm"].replace(
 )
 
 df["plot_payload"] = df["payload_size"] / p_div
-df["plot_instructions"] = df["instructions"] / i_div
+df["plot_instructions"] = df["cpu_instructions"] / i_div
 
 color_map = {"Bracha": "tab:blue", "AFRT": "tab:orange", "Coded MBRB": "tab:green"}
 algorithm_order = ["Bracha", "AFRT", "Coded MBRB"]

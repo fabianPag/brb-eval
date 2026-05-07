@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 import glob
-import re
+import json
 import pandas as pd
 from pathlib import Path
 
@@ -10,42 +10,47 @@ results_dir = repo_root / "evaluations" / "results" / "local"
 results_file = results_dir / "metrics.csv"
 
 raw_dir = results_dir / "raw"
-all_files = glob.glob(str(raw_dir / "**" / "*.txt"), recursive=True)
+all_files = glob.glob(str(raw_dir / "**" / "*.json"), recursive=True)
 
 data = []
 
 for filepath in all_files:
-    filename = Path(filepath).stem
-    parts = filename.split("_")
-
-    algo = parts[1]
-    nodes = int(parts[2].replace("nodes", ""))
-    payload_size = int(parts[3].replace("bytes", ""))
-    t = int(parts[4].replace("t", ""))
-    d = int(parts[5].replace("d", ""))
-    run = int(parts[6].replace("run", ""))
-    node_id = int(parts[7].replace("node", ""))
-
     with open(filepath, "r") as f:
-        content = f.read()
-        match = re.search(r"([\d,]+)\s+instructions:u", content)
+        json_data = json.load(f)
 
-        if match:
-            # Remove commas from the instruction count
-            instructions = int(match.group(1).replace(",", ""))
+        algo = json_data.get("algorithm", "unknown")
+        payload_size = json_data.get("payload_size", 0)
+        n = json_data.get("n", 0)
+        t = json_data.get("t", 0)
+        d = json_data.get("d", 0)
 
-            data.append(
-                {
-                    "algorithm": algo,
-                    "payload_size": payload_size,
-                    "n": nodes,
-                    "t": t,
-                    "d": d,
-                    "node_id": node_id,
-                    "run": run,
-                    "instructions": instructions,
-                }
-            )
+        run = json_data.get("run", -1)
+        env = json_data.get("env", "unknown")
+
+        if "node_metrics" in json_data:
+            for metrics in json_data["node_metrics"]:
+                data.append(
+                    {
+                        "algorithm": algo,
+                        "payload_size": payload_size,
+                        "n": n,
+                        "t": t,
+                        "d": d,
+                        "node_id": metrics.get("node_id", -1),
+                        "role": metrics.get("role", "unknown"),
+                        "first_message_time": metrics.get("first_message_time"),
+                        "delivery_time": metrics.get("delivery_time"),
+                        "messages_received": metrics.get("messages_received", 0),
+                        "bytes_received": metrics.get("bytes_received", 0),
+                        "messages_sent": metrics.get("messages_sent", 0),
+                        "bytes_sent": metrics.get("bytes_sent", 0),
+                        "run": run,
+                        "env": env,
+                        "cpu_instructions": metrics.get("cpu_instructions", None),
+                    }
+                )
+        else:
+            print("Warning: 'node_metrics' key not found")
 
 df = pd.DataFrame(data)
 df.to_csv(str(results_file), index=False)
