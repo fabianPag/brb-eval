@@ -32,10 +32,17 @@ func main() {
 	nodeID := flag.Int("id", -1, "this node's ID")
 	nodeAddr := flag.String("addr", "", "this nodes host:port")
 	controllerAddr := flag.String("controller", "", "address of the controller")
+	deliveryTimeoutFlag := flag.Duration("deliveryTimeout", 30*time.Second, "Max time to wait for algorithm delivery")
+
+	flag.Usage = func() {
+		fmt.Fprintf(os.Stderr, "Usage: node -id=<id> -addr=<host:port> -controller=<host:port> [options]\n\n")
+		fmt.Fprintf(os.Stderr, "Options:\n")
+		flag.PrintDefaults()
+	}
 	flag.Parse()
 
 	if *nodeID < 0 || *nodeAddr == "" || *controllerAddr == "" {
-		fmt.Println("Usage: node -id=<id> -addr=<host:port> -controller=<host:port>")
+		flag.Usage()
 		os.Exit(1)
 	}
 
@@ -43,19 +50,19 @@ func main() {
 
 	tcpTransport := transport.NewTCPTransport(core.NodeID(*nodeID))
 	if err := tcpTransport.Listen(*nodeAddr); err != nil {
-		fmt.Printf("[ERROR] Failed to start listener: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to start listener: %v\n", err)
 		os.Exit(1)
 	}
 
 	pub, priv, err := ed25519.GenerateKey(nil)
 	if err != nil {
-		fmt.Println("[ERROR] Failed to generate key pair:", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to generate key pair: %v\n", err)
 		os.Exit(1)
 	}
 
 	config, err := sendRegisterAndWait(*controllerAddr, *nodeAddr, *nodeID, pub)
 	if err != nil {
-		fmt.Printf("[ERROR] Failed to register with controller: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to register with controller: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("Registered with controller. Network has %d peers.\n", len(config.Peers))
@@ -71,7 +78,7 @@ func main() {
 
 	fmt.Println("Connecting to peers...")
 	if err := tcpTransport.ConnectAll(); err != nil {
-		fmt.Printf("[ERROR] Failed to connect to peers: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to connect to peers: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Println("Connected to all peers.")
@@ -94,21 +101,10 @@ func main() {
 
 		p1Manager := manager.NewSplitManager(mgr, 0, partitionMid)
 		p2Manager := manager.NewSplitManager(mgr, partitionMid, core.NodeID(numPeers))
-		selectedAlgorithm := strings.ToLower(config.Algorithm)
-		switch selectedAlgorithm {
-		case "bracha":
-			brb1 = bracha.NewBracha(p1Manager, config.T)
-			brb2 = bracha.NewBracha(p2Manager, config.T)
-		case "afrt":
-			brb1 = afrt.NewAFRT(p1Manager, config.T, config.D, priv, publicKeys)
-			brb2 = afrt.NewAFRT(p2Manager, config.T, config.D, priv, publicKeys)
-		case "codedmbrb":
-			brb1 = codedmbrb.NewCodedMBRB(p1Manager, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
-			brb2 = codedmbrb.NewCodedMBRB(p2Manager, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
-		default:
-			fmt.Printf("[ERROR] Unknown algorithm: %s. Available options: bracha, codedmbrb, afrt\n", selectedAlgorithm)
-			os.Exit(1)
-		}
+
+		brb1 = createAlgorithm(config, p1Manager, priv, publicKeys)
+		brb2 = createAlgorithm(config, p2Manager, priv, publicKeys)
+
 		mgr.OnReceive(func(from core.NodeID, payload []byte) {
 			if from >= partitionMid {
 				go brb2.HandleIncoming(from, payload)
@@ -116,6 +112,7 @@ func main() {
 				go brb1.HandleIncoming(from, payload)
 			}
 		})
+
 		go mgr.Run()
 		payload1 = make([]byte, config.PayloadSize)
 		rand.Read(payload1)
@@ -123,18 +120,7 @@ func main() {
 		payload2 = make([]byte, config.PayloadSize)
 		rand.Read(payload2)
 	} else {
-		selectedAlgorithm := strings.ToLower(config.Algorithm)
-		switch selectedAlgorithm {
-		case "bracha":
-			brb1 = bracha.NewBracha(mgr, config.T)
-		case "afrt":
-			brb1 = afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
-		case "codedmbrb":
-			brb1 = codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
-		default:
-			fmt.Printf("[ERROR] Unknown algorithm: %s. Available options: bracha, codedmbrb, afrt\n", selectedAlgorithm)
-			os.Exit(1)
-		}
+		brb1 = createAlgorithm(config, mgr, priv, publicKeys)
 
 		mgr.OnReceive(brb1.HandleIncoming)
 		go mgr.Run()
@@ -150,7 +136,7 @@ func main() {
 
 	fmt.Printf("Signaling ready...\n")
 	if err := sendReadyAndWait(*controllerAddr, *nodeID); err != nil {
-		fmt.Printf("[ERROR] Failed to signal ready: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to signal ready: %v\n", err)
 		os.Exit(1)
 	}
 	fmt.Printf("All nodes ready. Starting %s. Acting as role %s\n", config.Algorithm, config.Role)
@@ -169,7 +155,7 @@ func main() {
 	delivered := false
 	var deliveredPayload []byte
 	if config.Role == "honest" {
-		deliveredPayload, delivered = mgr.WaitForDelivery(30 * time.Second) // Wait until manager signals delivery or timeout after 30 seconds. Optimized towards Shadow, feel free to change lol
+		deliveredPayload, delivered = mgr.WaitForDelivery(*deliveryTimeoutFlag)
 	}
 
 	fmt.Println("Signaling done...")
@@ -208,6 +194,22 @@ func main() {
 	metricsInstance.PrintMetrics()
 
 	os.Exit(0)
+}
+
+func createAlgorithm(config api.Config, mgr core.Manager, priv ed25519.PrivateKey, publicKeys map[core.NodeID]ed25519.PublicKey) brbAlgorithm {
+	selectedAlgorithm := strings.ToLower(config.Algorithm)
+	switch selectedAlgorithm {
+	case "bracha":
+		return bracha.NewBracha(mgr, config.T)
+	case "afrt":
+		return afrt.NewAFRT(mgr, config.T, config.D, priv, publicKeys)
+	case "codedmbrb":
+		return codedmbrb.NewCodedMBRB(mgr, config.T, config.D, config.DesignatedSender, config.PublicCryptoParams, config.PrivateCryptoParams)
+	default:
+		fmt.Fprintf(os.Stderr, "[ERROR] Unknown algorithm: %s\n", selectedAlgorithm)
+		os.Exit(1)
+		return nil
+	}
 }
 
 func sendMetricsAndWait(controllerAddr string, data api.MetricsData) error {
