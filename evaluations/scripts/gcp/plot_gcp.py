@@ -20,7 +20,7 @@ latency_divisor = 1  # in case we want to convert time units
 
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
-results_dir = repo_root / "evaluations" / "results" / "gcp" / "sim"
+results_dir = repo_root / "evaluations" / "results" / "gcp"
 plots_dir = results_dir / "plots"
 plots_dir.mkdir(exist_ok=True)
 

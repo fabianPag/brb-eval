@@ -36,6 +36,9 @@ for filepath in all_files:
                         "n": n,
                         "t": t,
                         "d": d,
+                        "designated_sender": json_data.get("designated_sender", 0),
+                        "num_silent": json_data.get("num_silent", 0),
+                        "num_msg_drops": json_data.get("num_msg_drops", 0),
                         "node_id": metrics.get("node_id", -1),
                         "role": metrics.get("role", "unknown"),
                         "first_message_time": metrics.get("first_message_time"),
@@ -44,9 +47,9 @@ for filepath in all_files:
                         "bytes_received": metrics.get("bytes_received", 0),
                         "messages_sent": metrics.get("messages_sent", 0),
                         "bytes_sent": metrics.get("bytes_sent", 0),
+                        "cpu_instructions": metrics.get("cpu_instructions", None),
                         "run": run,
                         "env": env,
-                        "cpu_instructions": metrics.get("cpu_instructions", None),
                     }
                 )
         else:

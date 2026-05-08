@@ -12,13 +12,16 @@ from tqdm import tqdm
 parser = argparse.ArgumentParser()
 parser.add_argument("-n", "--nodes", nargs="+", type=int, required=True)
 parser.add_argument("-p", "--payloads", nargs="+", type=str, required=True)
-parser.add_argument("-t", "--byzantine", nargs="+", type=int, default=[0])
-parser.add_argument("-d", "--dropped", nargs="+", type=int, default=[0])
+parser.add_argument("-t", nargs="+", type=int, default=[0])
+parser.add_argument("-d", nargs="+", type=int, default=[0])
+parser.add_argument("--numSilent", nargs="+", type=int, default=[0])
+parser.add_argument("--numMsgDrops", nargs="+", type=int, default=[0])
 args = parser.parse_args()
 
+evalEnv = "sim"
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
-results_dir = repo_root / "evaluations" / "results" / "sim" / "raw"
+results_dir = repo_root / "evaluations" / "results" / evalEnv / "raw"
 config_script = script_dir / "generate_shadow_config.sh"
 bin_dir = repo_root / "bin"
 
@@ -35,7 +38,13 @@ for algo in algorithms:
 
 configurations = list(
     itertools.product(
-        algorithms, args.payloads, args.nodes, args.byzantine, args.dropped
+        algorithms,
+        args.payloads,
+        args.nodes,
+        args.t,
+        args.d,
+        args.numSilent,
+        args.numMsgDrops,
     )
 )
 
@@ -63,17 +72,17 @@ for p in args.payloads:
 
 try:
     for config in tqdm(configurations, desc="Progress", unit="config"):
-        algorithm, payload_size, node_count, byzantine, dropped = config
+        algorithm, payload_size, node_count, t, d, num_silent, num_msg_drops = config
 
         p_bytes = to_bytes(payload_size)
-        base_filename = f"metrics_{algorithm}_{node_count}nodes_{p_bytes}bytes_t{byzantine}_d{dropped}"
+        base_filename = f"{evalEnv}_{algorithm}_n{node_count}_p{p_bytes}_t{t}_d{d}_s{num_silent}_m{num_msg_drops}"
         final_json_path = results_dir / algorithm / f"{base_filename}.json"
 
         if final_json_path.exists():
             continue
 
         tqdm.write(
-            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={byzantine} | d={dropped}"
+            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={t} | d={d} | NumSilent={num_silent} | NumMsgDrops={num_msg_drops}"
         )
 
         tmp_path = Path(tempfile.mkdtemp(prefix="sim_"))
@@ -83,7 +92,7 @@ try:
             abs_controller = str(repo_root / "bin" / "controller")
             abs_node = str(repo_root / "bin" / "node")
 
-            expected_final_state = 0 if byzantine < node_count / 3 else 1
+            expected_final_state = 0 if t < node_count / 3 else 1
 
             subprocess.run(
                 [
@@ -92,11 +101,11 @@ try:
                     str(yaml_path),
                     algorithm,
                     str(payload_size),
-                    str(byzantine),
-                    str(dropped),
+                    str(t),
+                    str(d),
                     "false",
-                    "0",
-                    "0",
+                    str(num_silent),
+                    str(num_msg_drops),
                     str(expected_final_state),
                     abs_controller,
                     abs_node,
@@ -121,7 +130,7 @@ try:
                 with open(metrics_source, "r") as f:
                     data = json.load(f)
 
-                data["env"] = "sim"
+                data["env"] = evalEnv
 
                 with open(final_json_path, "w") as f:
                     json.dump(data, f, indent=2)

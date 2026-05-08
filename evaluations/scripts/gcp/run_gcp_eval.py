@@ -13,16 +13,19 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-r", "--runs", type=int, default=1)
 parser.add_argument("-n", "--nodes", nargs="+", type=int, required=True, help="List of node counts (e.g. 5 7 10)")
 parser.add_argument("-p", "--payloads", nargs="+", type=str, required=True)
-parser.add_argument("-t", "--byzantine", nargs="+", type=int, default=[0])
-parser.add_argument("-d", "--dropped", nargs="+", type=int, default=[0])
+parser.add_argument("-t", nargs="+", type=int, default=[0])
+parser.add_argument("-d", nargs="+", type=int, default=[0])
+parser.add_argument("--numSilent", nargs="+", type=int, default=[0])
+parser.add_argument("--numMsgDrops", nargs="+", type=int, default=[0])
 parser.add_argument("--zone", type=str, default="europe-north1-a")
 args = parser.parse_args()
 
+evalEnv = "gcp"
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
 bin_dir = repo_root / "bin"
 
-results_dir = repo_root / "evaluations" / "results" / "gcp" / "raw"
+results_dir = repo_root / "evaluations" / "results" / evalEnv / "raw"
 
 algorithms = ["bracha", "afrt", "codedmbrb"]
 
@@ -89,14 +92,14 @@ for i in range(max_nodes):
     node_ips.append(res.stdout.strip())
 
 # 3. Test Execution Loop
-configs = list(itertools.product(range(1, args.runs + 1), algorithms, args.payloads, args.nodes, args.byzantine, args.dropped))
+configs = list(itertools.product(range(1, args.runs + 1), algorithms, args.payloads, args.nodes, args.t, args.d, args.numSilent, args.numMsgDrops))
 
 try:
     for config in tqdm(configs, desc="Running Configurations"):
-        run_idx, algorithm, p_size, n, t, d = config
+        run_idx, algorithm, p_size, n, t, d, num_silent, num_msg_drops = config
         p_bytes = to_bytes(p_size)
         
-        tqdm.write(f"--- Running {algorithm.upper()} | N={n} | Payload={p_size} | t={t} | d={d} | Run {run_idx}/{args.runs} ---")
+        tqdm.write(f"--- Running {algorithm.upper()} | N={n} | Payload={p_size} | t={t} | d={d} | NumSilent={num_silent} | NumMsgDrops={num_msg_drops} | Run {run_idx}/{args.runs} ---")
 
         # Cleanup old processes
         subprocess.run([f"gcloud compute ssh brb-controller --zone={args.zone} --tunnel-through-iap --command='pkill -f controller || true' --quiet"], shell=True, stderr=subprocess.DEVNULL)
@@ -106,7 +109,7 @@ try:
         # Start Controller
         subprocess.run([
             "gcloud", "compute", "ssh", "brb-controller", f"--zone={args.zone}", "--tunnel-through-iap", "--quiet",
-            "--command", f"nohup ~/controller -addr=0.0.0.0:8080 -n={n} -algorithm={algorithm} -payloadSize={p_size} -t={t} -d={d} -keepControllerAlive=true > ~/controller.log 2>&1 &"
+            "--command", f"nohup ~/controller -addr=0.0.0.0:8080 -n={n} -algorithm={algorithm} -payloadSize={p_size} -t={t} -d={d} -numSilent={num_silent} -numMsgDrops={num_msg_drops} -keepControllerAlive=true > ~/controller.log 2>&1 &"
         ])
         time.sleep(3) # Give controller time to bind port
 
@@ -139,14 +142,14 @@ try:
             continue
 
         # Download Metrics
-        gcp_save_path = results_dir / algorithm / f"metrics_{algorithm}_{n}nodes_{p_bytes}bytes_t{t}_d{d}_run{run_idx}.json"
+        gcp_save_path = results_dir / algorithm / f"{evalEnv}_{algorithm}_n{n}_p{p_bytes}_t{t}_d{d}_s{num_silent}_m{num_msg_drops}_run{run_idx}.json"
         try:
             urllib.request.urlretrieve(f"http://{controller_public_ip}:8080/download/metrics", gcp_save_path)
             
             with open(gcp_save_path, "r") as f:
                 data = json.load(f)
 
-            data["env"] = "gcp"
+            data["env"] = evalEnv
             data["run"] = run_idx
 
             with open(gcp_save_path, "w") as f:

@@ -16,14 +16,17 @@ parser = argparse.ArgumentParser()
 parser.add_argument("-r", "--runs", type=int, default=10)
 parser.add_argument("-n", "--nodes", nargs="+", type=int, required=True)
 parser.add_argument("-p", "--payloads", nargs="+", type=str, required=True)
-parser.add_argument("-t", "--byzantine", nargs="+", type=int, default=[0])
-parser.add_argument("-d", "--dropped", nargs="+", type=int, default=[0])
+parser.add_argument("-t", nargs="+", type=int, default=[0])
+parser.add_argument("-d", nargs="+", type=int, default=[0])
+parser.add_argument("--numSilent", nargs="+", type=int, default=[0])
+parser.add_argument("--numMsgDrops", nargs="+", type=int, default=[0])
 parser.add_argument("--no-perf", action="store_true")
 args = parser.parse_args()
 
+evalEnv = "local"
 script_dir = Path(__file__).resolve().parent
 repo_root = script_dir.parent.parent.parent
-results_dir = repo_root / "evaluations" / "results" / "local" / "raw"
+results_dir = repo_root / "evaluations" / "results" / evalEnv / "raw"
 
 algorithms = ["bracha", "afrt", "codedmbrb"]
 
@@ -40,8 +43,10 @@ configurations = list(
         algorithms,
         args.payloads,
         args.nodes,
-        args.byzantine,
-        args.dropped,
+        args.t,
+        args.d,
+        args.numSilent,
+        args.numMsgDrops,
     )
 )
 
@@ -69,17 +74,19 @@ for p in args.payloads:
 
 try:
     for config in tqdm(configurations, desc="Progress", unit="config"):
-        run, algorithm, payload_size, node_count, byzantine, dropped = config
+        run, algorithm, payload_size, node_count, t, d, num_silent, num_msg_drops = (
+            config
+        )
 
         p_bytes = to_bytes(payload_size)
-        base_filename = f"metrics_{algorithm}_{node_count}nodes_{p_bytes}bytes_t{byzantine}_d{dropped}_run{run}"
+        base_filename = f"{evalEnv}_{algorithm}_n{node_count}_p{p_bytes}_t{t}_d{d}_s{num_silent}_m{num_msg_drops}_run{run}"
         final_json_path = results_dir / algorithm / f"{base_filename}.json"
 
         if final_json_path.exists():
             continue
 
         tqdm.write(
-            f"Running: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={byzantine} | d={dropped} | Run {run}/{args.runs}"
+            f"Running: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={t} | d={d} | NumSilent={num_silent} | NumMsgDrops={num_msg_drops} | Run {run}/{args.runs}"
         )
 
         tmp_run_dir = Path(tempfile.mkdtemp(prefix=f"local_run_{run}_"))
@@ -94,12 +101,14 @@ try:
                     str(repo_root / "bin" / "controller"),
                     f"-addr={controller_addr}",
                     f"-n={node_count}",
-                    f"-t={byzantine}",
-                    f"-d={dropped}",
+                    f"-t={t}",
+                    f"-d={d}",
                     f"-algorithm={algorithm}",
                     f"-payloadSize={payload_size}",
-                    "-gracePeriod=1s",
+                    f"-numSilent={num_silent}",
+                    f"-numMsgDrops={num_msg_drops}",
                     f"-metricsFile={str(temp_json_path)}",
+                    "-gracePeriod=1s",
                 ],
                 stdout=subprocess.DEVNULL,
             )
@@ -158,7 +167,7 @@ try:
                 with open(temp_json_path, "r") as f:
                     data = json.load(f)
 
-                data["env"] = "local"
+                data["env"] = evalEnv
                 data["run"] = run
 
                 if not args.no_perf and "node_metrics" in data:
