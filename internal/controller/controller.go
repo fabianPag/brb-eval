@@ -190,12 +190,12 @@ func (c *Controller) handleDone(w http.ResponseWriter, r *http.Request) {
 		fmt.Printf("Node %d is done\n", id)
 
 		if len(c.doneNodes) == c.opts.N {
+			c.endTime = time.Now()
 			fmt.Printf("All nodes done. Waiting for %v to let any in-flight algorithm messages arrive.\n", c.opts.GracePeriod)
 			go func() {
 				time.Sleep(c.opts.GracePeriod)
 				fmt.Println("Unblocking all nodes.")
 				close(c.allDone)
-				c.endTime = time.Now()
 			}()
 		}
 	}

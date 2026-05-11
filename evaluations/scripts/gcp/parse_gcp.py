@@ -26,18 +26,17 @@ for filepath in all_files:
         run = json_data.get("run", -1)
         env = json_data.get("env", "unknown")
 
+        start_time_str = json_data.get("start_time")
+        end_time_str = json_data.get("end_time")
+
+        global_latency_ms = None
+        if start_time_str and end_time_str:
+            start_time = pd.to_datetime(start_time_str)
+            end_time = pd.to_datetime(end_time_str)
+            global_latency_ms = (end_time - start_time).total_seconds() * 1000.0
+
         if "node_metrics" in json_data:
             for metrics in json_data["node_metrics"]:
-                first_msg = metrics.get("first_message_time")
-                delivery = metrics.get("delivery_time")
-
-                latency_ms = None
-                if delivery and first_msg:
-                    t1 = pd.to_datetime(first_msg)
-                    t2 = pd.to_datetime(delivery)
-
-                    latency_ms = (t2 - t1).total_seconds() * 1000.0
-
                 data.append(
                     {
                         "algorithm": algo,
@@ -48,9 +47,11 @@ for filepath in all_files:
                         "designated_sender": json_data.get("designated_sender", 0),
                         "num_silent": json_data.get("num_silent", 0),
                         "num_msg_drops": json_data.get("num_msg_drops", 0),
+                        "global_start_time": start_time_str,
+                        "global_end_time": end_time_str,
+                        "global_latency": global_latency_ms,
                         "node_id": metrics.get("node_id", -1),
                         "role": metrics.get("role", "unknown"),
-                        "latency": latency_ms,
                         "first_message_time": metrics.get("first_message_time"),
                         "delivery_time": metrics.get("delivery_time"),
                         "messages_received": metrics.get("messages_received", 0),
