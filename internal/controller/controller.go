@@ -46,6 +46,8 @@ type Controller struct {
 	privateCryptoParams map[int]api.PrivateCryptoParams
 	allDone             chan struct{}
 	allMetricsReceived  chan struct{}
+	startTime           time.Time
+	endTime             time.Time
 }
 
 type metricsExport struct {
@@ -57,6 +59,8 @@ type metricsExport struct {
 	DesignatedSender int               `json:"designated_sender"`
 	NumSilent        int               `json:"num_silent"`
 	NumMsgDrops      int               `json:"num_msg_drops"`
+	StartTime        time.Time         `json:"start_time"`
+	EndTime          time.Time         `json:"end_time"`
 	NodeMetrics      []api.MetricsData `json:"node_metrics"`
 }
 
@@ -155,6 +159,8 @@ func (c *Controller) handleDownloadMetrics(w http.ResponseWriter, r *http.Reques
 		DesignatedSender: c.opts.DesignatedSender,
 		NumSilent:        c.opts.NumSilent,
 		NumMsgDrops:      c.opts.NumMsgDrops,
+		StartTime:        c.startTime,
+		EndTime:          c.endTime,
 		NodeMetrics:      c.nodeMetrics,
 	}
 
@@ -189,6 +195,7 @@ func (c *Controller) handleDone(w http.ResponseWriter, r *http.Request) {
 				time.Sleep(c.opts.GracePeriod)
 				fmt.Println("Unblocking all nodes.")
 				close(c.allDone)
+				c.endTime = time.Now()
 			}()
 		}
 	}
@@ -240,6 +247,8 @@ func (c *Controller) saveMetricsToFile(filepath string) error {
 		DesignatedSender: c.opts.DesignatedSender,
 		NumSilent:        c.opts.NumSilent,
 		NumMsgDrops:      c.opts.NumMsgDrops,
+		StartTime:        c.startTime,
+		EndTime:          c.endTime,
 		NodeMetrics:      c.nodeMetrics,
 	}
 
@@ -341,6 +350,7 @@ func (c *Controller) handleReady(w http.ResponseWriter, r *http.Request) {
 			fmt.Println("All nodes ready. Unblocking.")
 			fmt.Printf("Starting algorithm %s with %d nodes, t=%d, d=%d\n", c.opts.Algorithm, c.opts.N, c.opts.T, c.opts.D)
 			close(c.allReady)
+			c.startTime = time.Now()
 		}
 	}
 
