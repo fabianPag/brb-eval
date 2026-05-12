@@ -20,8 +20,6 @@ for filepath in all_files:
         algo = json_data.get("algorithm", "unknown")
         payload_size = json_data.get("payload_size", 0)
         n = json_data.get("n", 0)
-        t = json_data.get("t", 0)
-        d = json_data.get("d", 0)
 
         run = json_data.get("run", -1)
         env = json_data.get("env", "unknown")
@@ -42,11 +40,7 @@ for filepath in all_files:
                         "algorithm": algo,
                         "payload_size": payload_size,
                         "n": n,
-                        "t": t,
-                        "d": d,
                         "designated_sender": json_data.get("designated_sender", 0),
-                        "num_silent": json_data.get("num_silent", 0),
-                        "num_msg_drops": json_data.get("num_msg_drops", 0),
                         "global_start_time": start_time_str,
                         "global_end_time": end_time_str,
                         "global_latency": global_latency_ms,
