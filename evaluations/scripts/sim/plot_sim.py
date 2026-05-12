@@ -127,21 +127,21 @@ for orig_payload in sorted(df_total["payload_size"].unique()):
     plt.close(fig)
     print(f"Plot saved to {out_file}")
 
-# Additional plots for delivering nodes and messages sent vs Byzantine nodes
+# Additional plots for delivering nodes and messages sent vs silent nodes
 
 def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
-    if df_subset["t"].nunique() < 2:
+    if df_subset["num_silent"].nunique() < 2:
         return
 
     fig, ax = plt.subplots(figsize=(10, 6))
     width = 0.18
 
     for i, algo in enumerate(algorithm_order):
-        algo_data = df_subset[df_subset["algorithm"] == algo].sort_values("t")
+        algo_data = df_subset[df_subset["algorithm"] == algo].sort_values("num_silent")
         if not algo_data.empty:
             offset = (i - 1) * width
             ax.bar(
-                algo_data["t"] + offset, 
+                algo_data["num_silent"] + offset, 
                 algo_data[y_column], 
                 width, 
                 label=algo, 
@@ -159,7 +159,7 @@ def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
     ax.text(
         threshold, 
         ax.get_ylim()[1] * 1.02, 
-        "t < n/3", 
+        "Silent < n/3", 
         color="gray", 
         ha="center", 
         va="bottom", 
@@ -167,7 +167,7 @@ def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
         style="italic"
     )
 
-    ax.set_xlabel("Byzantine Nodes (t)", fontsize=11, labelpad=10)
+    ax.set_xlabel("Silent Nodes", fontsize=11, labelpad=10)
     ax.set_ylabel(y_label, fontsize=11, labelpad=10)
     ax.set_title(title, pad=20)
     ax.legend(loc="upper right", frameon=True)
@@ -182,13 +182,13 @@ def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
 
 df_delivering = (
     df[df["delivery_time"].notna()]
-    .groupby(["algorithm", "n", "payload_size", "t"])
+    .groupby(["algorithm", "n", "payload_size", "num_silent"])
     .size()
     .reset_index(name="raw_count")
 )
 
 df_delivering["delivering_nodes"] = df_delivering.apply(
-    lambda row: row["n"] - row["t"] if row["raw_count"] > 0 and row["t"] < row["n"]/3 else 0, 
+    lambda row: row["n"] - row["num_silent"] if row["raw_count"] > 0 and row["num_silent"] < row["n"]/3 else 0, 
     axis=1
 )
 df_delivering["algorithm"] = df_delivering["algorithm"].replace(
@@ -196,13 +196,13 @@ df_delivering["algorithm"] = df_delivering["algorithm"].replace(
 )
 
 df_avg_msgs = (
-    df.groupby(["algorithm", "n", "payload_size", "t"])["messages_sent"]
+    df.groupby(["algorithm", "n", "payload_size", "num_silent"])["messages_sent"]
     .mean()
     .reset_index()
 )
 
 df_avg_msgs["messages_sent"] = df_avg_msgs["messages_sent"] * (
-    (df_avg_msgs["n"] - df_avg_msgs["t"]) / df_avg_msgs["n"]
+    (df_avg_msgs["n"] - df_avg_msgs["num_silent"]) / df_avg_msgs["n"]
 )
 df_avg_msgs["algorithm"] = df_avg_msgs["algorithm"].replace(
     {"bracha": "Bracha", "afrt": "AFRT", "codedmbrb": "Coded MBRB"}
@@ -222,8 +222,8 @@ for n in sorted(df_delivering["n"].unique()):
             df_subset=subset_delivering,
             y_column="delivering_nodes",
             y_label="Delivering Nodes (L)",
-            title=f"Byzantine Threshold: Delivering Nodes (n={n}, Payload Size={payload_str} MB)",
-            out_filename=plots_dir / f"figure_delivering_nodes_vs_byzantine_{n}nodes_{payload_size}bytes.pdf"
+            title=f"Silent Node Threshold: Delivering Nodes (n={n}, Payload Size={payload_str} MB)",
+            out_filename=plots_dir / f"figure_delivering_nodes_vs_silent_{n}nodes_{payload_size}bytes.pdf"
         )
 
         # Average Messages Chart
@@ -234,6 +234,6 @@ for n in sorted(df_delivering["n"].unique()):
             df_subset=subset_msgs,
             y_column="messages_sent",
             y_label="Messages Sent (Avg. per Node)",
-            title=f"Byzantine Threshold: Message Overhead (n={n}, Payload Size={payload_str} MB)",
-            out_filename=plots_dir / f"figure_avg_messages_vs_byzantine_{n}nodes_{payload_size}bytes.pdf"
+            title=f"Silent Node Threshold: Message Overhead (n={n}, Payload Size={payload_str} MB)",
+            out_filename=plots_dir / f"figure_avg_messages_vs_silent_{n}nodes_{payload_size}bytes.pdf"
         )
