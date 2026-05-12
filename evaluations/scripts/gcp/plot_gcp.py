@@ -51,6 +51,7 @@ for n in sorted(df_run["n"].unique()):
     plt.title(f"Average Latency by Payload Size ({n} Nodes)")
     plt.xlabel(f"Payload Size ({args.payload_scale.upper()})")
     plt.ylabel("Latency (ms)")
+    plt.legend(title=None)
     fig.savefig(plots_dir / f"gcp_latency_vs_payload_{n}nodes.pdf", bbox_inches="tight")
     plt.close(fig)
 
@@ -65,6 +66,7 @@ for n in sorted(df_run["n"].unique()):
     plt.title(f"Total Network Data by Payload Size ({n} Nodes)")
     plt.xlabel(f"Payload Size ({args.payload_scale.upper()})")
     plt.ylabel(f"Total Data Sent ({args.data_scale.upper()})")
+    plt.legend(title=None)
     fig.savefig(plots_dir / f"gcp_data_vs_payload_{n}nodes.pdf", bbox_inches="tight")
     plt.close(fig)
 
@@ -82,6 +84,7 @@ for payload in sorted(df_run["payload_size"].unique()):
     plt.xlabel("Total Nodes (n)")
     plt.xticks(sorted(subset["n"].unique()))
     plt.ylabel("Latency (ms)")
+    plt.legend(title=None)
     fig.savefig(plots_dir / f"gcp_latency_vs_nodes_{payload}bytes.pdf", bbox_inches="tight")
     plt.close(fig)
 
@@ -92,6 +95,7 @@ for payload in sorted(df_run["payload_size"].unique()):
     plt.xlabel("Total Nodes (n)")
     plt.xticks(sorted(subset["n"].unique()))
     plt.ylabel(f"Total Data Sent ({args.data_scale.upper()})")
+    plt.legend(title=None)
     fig2.savefig(plots_dir / f"gcp_data_vs_nodes_{payload}bytes.pdf", bbox_inches="tight")
     plt.close(fig2)
 
@@ -116,7 +120,7 @@ for n in sorted(df_run["n"].unique()):
         # Add a vertical red dashed line at the theoretical limit (n > 3t)
         limit = (n - 1) // 3
         plt.axvline(x=limit + 0.5, color='red', linestyle='--', alpha=0.5, label="Theoretical Limit")
-        
+        plt.legend(title=None)
         fig.savefig(plots_dir / f"gcp_latency_vs_faults_n{n}_{payload}bytes.pdf", bbox_inches="tight")
         plt.close(fig)
 
@@ -143,7 +147,7 @@ for n in sorted(df_run["n"].unique()):
         # Assuming t=0 for this plot: n > 2d  => d < n/2
         limit_d = (n - 1) // 2
         plt.axvline(x=limit_d + 0.5, color='red', linestyle='--', alpha=0.5, label="Theoretical Limit")
-        
+        plt.legend(title=None)
         fig.savefig(plots_dir / f"gcp_latency_vs_dropped_n{n}_{payload}bytes.pdf", bbox_inches="tight")
         plt.close(fig)
 
