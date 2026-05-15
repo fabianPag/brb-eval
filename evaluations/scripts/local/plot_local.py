@@ -19,8 +19,8 @@ parser.add_argument(
     "--instr-scale",
     type=str,
     choices=["none", "thousands", "millions", "billions"],
-    default="billions",
-    help="Scale for the instructions axis (default: billions)",
+    default="millions",
+    help="Scale for the instructions axis (default: millions)",
 )
 args = parser.parse_args()
 
@@ -32,10 +32,10 @@ PAYLOAD_SCALES = {
 }
 
 INSTR_SCALES = {
-    "none": (1, "Count"),
-    "thousands": (1_000, "Count (Thousands)"),
-    "millions": (1_000_000, "Count (Millions)"),
-    "billions": (1_000_000_000, "Count (Billions)"),
+    "none": (1, ""),
+    "thousands": (1_000, "(Thousands)"),
+    "millions": (1_000_000, "(Millions)"),
+    "billions": (1_000_000_000, "(Billions)"),
 }
 
 p_div, p_label = PAYLOAD_SCALES[args.payload_scale]
@@ -83,9 +83,9 @@ for n in sorted(df["n"].unique()):
         hue_order=algorithm_order,
     )
     plt.legend(title=None)
-    plt.title(f"CPU Instruction Count by Payload Size ({n} Nodes)")
+    plt.title(f"Average CPU Instruction Count by Payload Size ({n} Nodes)")
     plt.xlabel(f"Payload Size ({p_label})")
-    plt.ylabel(f"Instruction {i_label}")
+    plt.ylabel(f"Instructions per Node {i_label}")
 
     out_file = plots_dir / f"figure_instructions_vs_payload_{n}_nodes.pdf"
     fig.savefig(out_file, bbox_inches="tight")
@@ -114,10 +114,12 @@ for orig_payload in sorted(df["payload_size"].unique()):
         hue_order=algorithm_order,
     )
     plt.legend(title=None)
-    plt.title(f"CPU Instruction Count by Node Count (Payload Size={val_str} {p_label})")
+    plt.title(
+        f"Average CPU Instruction Count by Node Count (Payload Size={val_str} {p_label})"
+    )
     plt.xlabel("Node Count (n)")
     plt.xticks(sorted(subset["n"].unique()))
-    plt.ylabel(f"Instruction {i_label}")
+    plt.ylabel(f"Instructions per Node {i_label}")
 
     out_file = (
         plots_dir

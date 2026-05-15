@@ -221,7 +221,7 @@ for n in sorted(df_delivering["n"].unique()):
         generate_bft_bar_chart(
             df_subset=subset_delivering,
             y_column="delivering_nodes",
-            y_label="Delivering Nodes (L)",
+            y_label="Delivering Nodes",
             title=f"Silent Node Threshold: Delivering Nodes (n={n}, Payload Size={payload_str} MB)",
             out_filename=plots_dir / f"figure_delivering_nodes_vs_silent_{n}nodes_{payload_size}bytes.pdf"
         )
