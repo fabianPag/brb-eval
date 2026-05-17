@@ -33,7 +33,7 @@ type Transport interface {
 
 type Metrics interface {
 	RecordInitTime()
-	RecordDelivery()
+	RecordDelivery() int64
 	RecordMessageSent(payloadSize int)
 	RecordMessageReceived(payloadSize int)
 	PrintMetrics()

@@ -42,6 +42,7 @@ type MetricsData struct {
 	NodeID           int       `json:"node_id"`
 	Role             string    `json:"role"`
 	Delivered        bool      `json:"delivered"`
+	DeliveryCount    int64     `json:"delivery_count"`
 	DeliveredHash    string    `json:"delivered_hash"`
 	SentHash         string    `json:"sent_hash"`
 	FirstMessageTime time.Time `json:"first_message_time"`

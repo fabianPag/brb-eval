@@ -176,6 +176,7 @@ func main() {
 		NodeID:           *nodeID,
 		Role:             config.Role,
 		Delivered:        delivered,
+		DeliveryCount:    metricsResults.DeliveryCount,
 		DeliveredHash:    deliveredHashString,
 		SentHash:         sentHashString,
 		FirstMessageTime: metricsResults.FirstMessageTime,

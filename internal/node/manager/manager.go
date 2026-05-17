@@ -117,7 +117,13 @@ func (m *Manager) Broadcast(payload []byte) {
 }
 
 func (m *Manager) Deliver(initiator core.NodeID, payload []byte) {
-	m.metrics.RecordDelivery()
+	count := m.metrics.RecordDelivery()
+
+	if count > 1 {
+		fmt.Printf("Property violation! Deliver function called multiple times!\n")
+		return
+	}
+
 	fmt.Printf("[DELIVER] From node %d\n", initiator)
 	m.done <- payload
 }
