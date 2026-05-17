@@ -16,6 +16,9 @@ parser.add_argument("-t", nargs="+", type=int, default=[-1])
 parser.add_argument("-d", nargs="+", type=int, default=[0])
 parser.add_argument("--numSilent", nargs="+", type=int, default=[0])
 parser.add_argument("--numMsgDrops", nargs="+", type=int, default=[0])
+parser.add_argument(
+    "--twinsSender", nargs="+", type=str, choices=["true", "false"], default=["false"]
+)
 args = parser.parse_args()
 
 evalEnv = "sim"
@@ -45,6 +48,7 @@ configurations = list(
         args.d,
         args.numSilent,
         args.numMsgDrops,
+        args.twinsSender,
     )
 )
 
@@ -72,17 +76,30 @@ for p in args.payloads:
 
 try:
     for config in tqdm(configurations, desc="Progress", unit="config"):
-        algorithm, payload_size, node_count, t, d, num_silent, num_msg_drops = config
+        (
+            algorithm,
+            payload_size,
+            node_count,
+            t,
+            d,
+            num_silent,
+            num_msg_drops,
+            twins_sender,
+        ) = config
 
         p_bytes = to_bytes(payload_size)
         base_filename = f"{evalEnv}_{algorithm}_n{node_count}_p{p_bytes}_t{t}_d{d}_s{num_silent}_m{num_msg_drops}"
+
+        if twins_sender.lower() == "true":
+            base_filename += "_twins"
+
         final_json_path = results_dir / algorithm / f"{base_filename}.json"
 
         if final_json_path.exists():
             continue
 
         tqdm.write(
-            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={t} | d={d} | NumSilent={num_silent} | NumMsgDrops={num_msg_drops}"
+            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={t} | d={d} | NumSilent={num_silent} | NumMsgDrops={num_msg_drops} | Twins={twins_sender}"
         )
 
         tmp_path = Path(tempfile.mkdtemp(prefix="sim_"))
@@ -103,7 +120,7 @@ try:
                     str(payload_size),
                     str(t),
                     str(d),
-                    "false",
+                    twins_sender,
                     str(num_silent),
                     str(num_msg_drops),
                     str(expected_final_state),
