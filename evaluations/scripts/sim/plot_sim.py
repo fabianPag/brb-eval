@@ -48,25 +48,27 @@ for old_plot in plots_dir.glob("*.pdf"):
 
 df = pd.read_csv(results_file)
 
-df_total = (
-    df.groupby(["algorithm", "n", "payload_size", "t", "d"])["bytes_sent"]
+df = df[df["sender_role"] == "honest"]
+
+df_seed_totals = (
+    df.groupby(["algorithm", "n", "payload_size", "t", "d", "sim_seed"])["bytes_sent"]
     .sum()
     .reset_index()
 )
 
-df_total["algorithm"] = df_total["algorithm"].replace(
+df_seed_totals["algorithm"] = df_seed_totals["algorithm"].replace(
     {"bracha": "Bracha", "afrt": "AFRT", "codedmbrb": "Coded MBRB"}
 )
 
-df_total["plot_payload"] = df_total["payload_size"] / p_div
-df_total["plot_data"] = df_total["bytes_sent"] / d_div
+df_seed_totals["plot_payload"] = df_seed_totals["payload_size"] / p_div
+df_seed_totals["plot_data"] = df_seed_totals["bytes_sent"] / d_div
 
 color_map = {"Bracha": "tab:blue", "AFRT": "tab:orange", "Coded MBRB": "tab:green"}
 algorithm_order = ["Bracha", "AFRT", "Coded MBRB"]
 
 # Total Data Sent vs Payload Size (for each Node count)
-for n in sorted(df_total["n"].unique()):
-    subset = df_total[df_total["n"] == n]
+for n in sorted(df_seed_totals["n"].unique()):
+    subset = df_seed_totals[df_seed_totals["n"] == n]
 
     if subset["plot_payload"].nunique() < 2:
         print(f"Skipping plot for {n} nodes. Insufficient data.")
@@ -93,8 +95,8 @@ for n in sorted(df_total["n"].unique()):
     print(f"Plot saved to {out_file}")
 
 # Total Data Sent vs Node Count (for each Payload size)
-for orig_payload in sorted(df_total["payload_size"].unique()):
-    subset = df_total[df_total["payload_size"] == orig_payload]
+for orig_payload in sorted(df_seed_totals["payload_size"].unique()):
+    subset = df_seed_totals[df_seed_totals["payload_size"] == orig_payload]
 
     scaled_val = orig_payload / p_div
     val_str = f"{scaled_val:g}"
@@ -127,10 +129,10 @@ for orig_payload in sorted(df_total["payload_size"].unique()):
     plt.close(fig)
     print(f"Plot saved to {out_file}")
 
-# Additional plots for delivering nodes and messages sent vs silent nodes
 
 def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
     if df_subset["num_silent"].nunique() < 2:
+        print(f"Skipping plot for {title}. Insufficient data.")
         return
 
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -141,30 +143,28 @@ def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
         if not algo_data.empty:
             offset = (i - 1) * width
             ax.bar(
-                algo_data["num_silent"] + offset, 
-                algo_data[y_column], 
-                width, 
-                label=algo, 
-                color=color_map[algo]
+                algo_data["num_silent"] + offset,
+                algo_data[y_column],
+                width,
+                label=algo,
+                color=color_map[algo],
             )
 
-    # format x-axis to show full range
     n = df_subset["n"].iloc[0]
     ax.set_xticks(np.arange(0, n))
     ax.set_xlim(-0.6, n - 0.4)
-    
-    # draw n/3 threshold Line
+
     threshold = n / 3
     ax.axvline(x=threshold, color="gray", linestyle="--", linewidth=1.5)
     ax.text(
-        threshold, 
-        ax.get_ylim()[1] * 1.02, 
-        "Silent < n/3", 
-        color="gray", 
-        ha="center", 
-        va="bottom", 
-        fontsize=11, 
-        style="italic"
+        threshold,
+        ax.get_ylim()[1] * 1.02,
+        "Silent < n/3",
+        color="gray",
+        ha="center",
+        va="bottom",
+        fontsize=11,
+        style="italic",
     )
 
     ax.set_xlabel("Silent Nodes", fontsize=11, labelpad=10)
@@ -173,30 +173,52 @@ def generate_bft_bar_chart(df_subset, y_column, y_label, title, out_filename):
     ax.legend(loc="upper right", frameon=True)
     ax.grid(axis="y", color="lightgray", linestyle="-", linewidth=0.7, alpha=0.7)
     ax.grid(axis="x", visible=False)
-    ax.spines['top'].set_visible(False)
-    ax.spines['right'].set_visible(False)
+    ax.spines["top"].set_visible(False)
+    ax.spines["right"].set_visible(False)
 
     fig.savefig(out_filename, bbox_inches="tight")
     plt.close(fig)
-    print(f"Bar plot saved to {out_filename}")
 
-df_delivering = (
+
+df_delivering_per_seed = (
     df[df["delivery_time"].notna()]
-    .groupby(["algorithm", "n", "payload_size", "num_silent"])
+    .groupby(["algorithm", "n", "payload_size", "num_silent", "sim_seed"])
     .size()
     .reset_index(name="raw_count")
 )
 
-df_delivering["delivering_nodes"] = df_delivering.apply(
-    lambda row: row["n"] - row["num_silent"] if row["raw_count"] > 0 and row["num_silent"] < row["n"]/3 else 0, 
-    axis=1
+df_delivering_per_seed["delivering_nodes"] = df_delivering_per_seed.apply(
+    lambda row: (
+        row["n"] - row["num_silent"]
+        if row["raw_count"] > 0 and row["num_silent"] < row["n"] / 3
+        else 0
+    ),
+    axis=1,
+)
+
+df_delivering = (
+    df_delivering_per_seed.groupby(["algorithm", "n", "payload_size", "num_silent"])[
+        "delivering_nodes"
+    ]
+    .mean()
+    .reset_index()
 )
 df_delivering["algorithm"] = df_delivering["algorithm"].replace(
     {"bracha": "Bracha", "afrt": "AFRT", "codedmbrb": "Coded MBRB"}
 )
 
+df_avg_msgs_per_seed = (
+    df.groupby(["algorithm", "n", "payload_size", "num_silent", "sim_seed"])[
+        "messages_sent"
+    ]
+    .mean()
+    .reset_index()
+)
+
 df_avg_msgs = (
-    df.groupby(["algorithm", "n", "payload_size", "num_silent"])["messages_sent"]
+    df_avg_msgs_per_seed.groupby(["algorithm", "n", "payload_size", "num_silent"])[
+        "messages_sent"
+    ]
     .mean()
     .reset_index()
 )
@@ -209,12 +231,12 @@ df_avg_msgs["algorithm"] = df_avg_msgs["algorithm"].replace(
 )
 
 for n in sorted(df_delivering["n"].unique()):
-    for payload_size in sorted(df_delivering[df_delivering["n"] == n]["payload_size"].unique()):
-
+    for payload_size in sorted(
+        df_delivering[df_delivering["n"] == n]["payload_size"].unique()
+    ):
         payload_size_mb = payload_size / 1_000_000
         payload_str = f"{payload_size_mb:g}"
 
-        # Delivering Nodes Chart
         subset_delivering = df_delivering[
             (df_delivering["n"] == n) & (df_delivering["payload_size"] == payload_size)
         ]
@@ -223,10 +245,10 @@ for n in sorted(df_delivering["n"].unique()):
             y_column="delivering_nodes",
             y_label="Delivering Nodes",
             title=f"Silent Node Threshold: Delivering Nodes (n={n}, Payload Size={payload_str} MB)",
-            out_filename=plots_dir / f"figure_delivering_nodes_vs_silent_{n}nodes_{payload_size}bytes.pdf"
+            out_filename=plots_dir
+            / f"figure_delivering_nodes_vs_silent_{n}nodes_{payload_size}bytes.pdf",
         )
 
-        # Average Messages Chart
         subset_msgs = df_avg_msgs[
             (df_avg_msgs["n"] == n) & (df_avg_msgs["payload_size"] == payload_size)
         ]
@@ -235,5 +257,6 @@ for n in sorted(df_delivering["n"].unique()):
             y_column="messages_sent",
             y_label="Messages Sent (Avg. per Node)",
             title=f"Silent Node Threshold: Message Overhead (n={n}, Payload Size={payload_str} MB)",
-            out_filename=plots_dir / f"figure_avg_messages_vs_silent_{n}nodes_{payload_size}bytes.pdf"
+            out_filename=plots_dir
+            / f"figure_avg_messages_vs_silent_{n}nodes_{payload_size}bytes.pdf",
         )

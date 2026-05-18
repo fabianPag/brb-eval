@@ -31,6 +31,7 @@ def parse_environment(env_name):
             t = json_data.get("t", 0)
             d = json_data.get("d", 0)
             run = json_data.get("run", None)
+            sim_seed = json_data.get("sim_seed", None)
 
             start_time_str = json_data.get("start_time")
             end_time_str = json_data.get("end_time")
@@ -45,7 +46,14 @@ def parse_environment(env_name):
             num_msg_drops = json_data.get("num_msg_drops", None)
 
             sender_sent_hash = None
-            sender_role = None
+            sender_role = "honest"
+            if "node_metrics" in json_data:
+                for m in json_data["node_metrics"]:
+                    if m.get("node_id") == designated_sender:
+                        sender_role = m.get("role", "honest")
+                        sender_sent_hash = m.get("sent_hash")
+                        break
+
             delivered_hashes = set()
             properties_valid = True
 
@@ -62,10 +70,6 @@ def parse_environment(env_name):
                             f"[{env_name}] Property violation (Integrity/No-duplication): Node {node_id} delivered {delivery_count} times!"
                         )
 
-                    if node_id == designated_sender:
-                        sender_sent_hash = metrics.get("sent_hash")
-                        sender_role = role
-
                     if is_delivered:
                         delivered_hashes.add(metrics.get("delivered_hash"))
 
@@ -73,12 +77,14 @@ def parse_environment(env_name):
                         {
                             "env": env_name,
                             "run": run,
+                            "sim_seed": sim_seed,
                             "algorithm": algo,
                             "payload_size": payload_size,
                             "n": n,
                             "t": t,
                             "d": d,
                             "designated_sender": designated_sender,
+                            "sender_role": sender_role,
                             "num_silent": num_silent,
                             "num_msg_drops": num_msg_drops,
                             "global_start_time": start_time_str,

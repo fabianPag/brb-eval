@@ -12,15 +12,23 @@ NUMMSGDROPS=${9:-0}
 EXPECTED_FINAL_STATE=${10:-0}
 CONTROLLER_BIN=${11:-"../../bin/controller"}
 NODE_BIN=${12:-"../../bin/node"}
+SEED=${13}
 
 if [ -z "$N" ] || [ -z "$OUTPUT_FILE" ]; then
-  echo "Usage: $0 <n> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_msg_drops] [expected_state] [controller_path] [node_path]"
+  echo "Usage: $0 <n> <output_file> <algorithm> <payload_size> [t] [d] [twins_sender] [num_silent] [num_msg_drops] [expected_state] [controller_path] [node_path] [seed]"
   exit 1
 fi
 
 cat <<EOF > $OUTPUT_FILE
 general:
   stop_time: 60s
+EOF
+
+if [ -n "$SEED" ]; then
+  echo "  seed: $SEED" >> $OUTPUT_FILE
+fi
+
+cat <<EOF >> $OUTPUT_FILE
 
 network:
   graph:

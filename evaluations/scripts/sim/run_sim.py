@@ -19,6 +19,7 @@ parser.add_argument("--numMsgDrops", nargs="+", type=int, default=[0])
 parser.add_argument(
     "--twinsSender", nargs="+", type=str, choices=["true", "false"], default=["false"]
 )
+parser.add_argument("--seed", nargs="+", type=int, default=[42])
 args = parser.parse_args()
 
 evalEnv = "sim"
@@ -49,6 +50,7 @@ configurations = list(
         args.numSilent,
         args.numMsgDrops,
         args.twinsSender,
+        args.seed,
     )
 )
 
@@ -85,10 +87,12 @@ try:
             num_silent,
             num_msg_drops,
             twins_sender,
+            seed,
         ) = config
 
         p_bytes = to_bytes(payload_size)
-        base_filename = f"{evalEnv}_{algorithm}_n{node_count}_p{p_bytes}_t{t}_d{d}_s{num_silent}_m{num_msg_drops}"
+
+        base_filename = f"{evalEnv}_{algorithm}_n{node_count}_p{p_bytes}_t{t}_d{d}_s{num_silent}_m{num_msg_drops}_seed{seed}"
 
         if twins_sender.lower() == "true":
             base_filename += "_twins"
@@ -99,7 +103,7 @@ try:
             continue
 
         tqdm.write(
-            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={t} | d={d} | NumSilent={num_silent} | NumMsgDrops={num_msg_drops} | Twins={twins_sender}"
+            f"Simulating: {algorithm.upper()} | N={node_count} | Payload={payload_size} | t={t} | d={d} | NumSilent={num_silent} | NumMsgDrops={num_msg_drops} | Twins={twins_sender} | Seed={seed}"
         )
 
         tmp_path = Path(tempfile.mkdtemp(prefix="sim_"))
@@ -126,6 +130,7 @@ try:
                     str(expected_final_state),
                     abs_controller,
                     abs_node,
+                    str(seed),
                 ],
                 check=True,
                 stdout=subprocess.DEVNULL,
@@ -148,6 +153,7 @@ try:
                     data = json.load(f)
 
                 data["env"] = evalEnv
+                data["sim_seed"] = seed
 
                 with open(final_json_path, "w") as f:
                     json.dump(data, f, indent=2)
