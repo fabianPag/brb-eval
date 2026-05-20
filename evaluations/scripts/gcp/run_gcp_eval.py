@@ -14,6 +14,7 @@ parser.add_argument("-r", "--runs", type=int, default=1)
 parser.add_argument("-n", "--nodes", nargs="+", type=int, required=True, help="List of node counts (e.g. 5 7 10)")
 parser.add_argument("-p", "--payloads", nargs="+", type=str, required=True)
 parser.add_argument("--zone", type=str, default="europe-north1-a")
+parser.add_argument("--measure-rtt", action="store_true", help="Measure RTT between nodes via ping")
 args = parser.parse_args()
 
 evalEnv = "gcp"
@@ -46,7 +47,7 @@ max_nodes = max(args.nodes)
 print(f"Provisioning 1 Controller and {max_nodes} Nodes on GCP in {args.zone}...")
 
 # Firewall
-subprocess.run(["gcloud", "compute", "firewall-rules", "create", "brb-allow-internal", "--allow=tcp,udp", "--source-ranges=10.0.0.0/8", "--quiet"], stderr=subprocess.DEVNULL)
+subprocess.run(["gcloud", "compute", "firewall-rules", "create", "brb-allow-internal", "--allow=tcp,udp,icmp", "--source-ranges=10.0.0.0/8", "--quiet"], stderr=subprocess.DEVNULL)
 subprocess.run(["gcloud", "compute", "firewall-rules", "create", "brb-allow-controller", "--allow=tcp:8080", "--source-ranges=0.0.0.0/0", "--target-tags=brb-controller", "--quiet"], stderr=subprocess.DEVNULL)
 subprocess.run(["gcloud", "compute", "firewall-rules", "create", "allow-ssh-ingress-from-iap", "--allow=tcp:22", "--source-ranges=35.235.240.0/20", "--quiet"], stderr=subprocess.DEVNULL)
 
@@ -86,6 +87,32 @@ node_ips = []
 for i in range(max_nodes):
     res = subprocess.run(["gcloud", "compute", "instances", "describe", f"brb-node-{i}", f"--zone={args.zone}", "--format=get(networkInterfaces[0].networkIP)"], capture_output=True, text=True)
     node_ips.append(res.stdout.strip())
+
+if args.measure_rtt:
+    print("Gathering RTT between nodes via ping")
+    ping_cmds = []
+    for i in range(max_nodes):
+        target_ips = [ip for j, ip in enumerate(node_ips) if j != i]
+        
+        node_cmd = " ; ".join([
+            f"echo '--- Pinging {ip} ---' >> ~/ping_rtt.log ; ping -c 5 {ip} >> ~/ping_rtt.log" 
+            for ip in target_ips
+        ])
+        
+        ssh_cmd = f"gcloud compute ssh brb-node-{i} --zone={args.zone} --tunnel-through-iap --quiet --command=\"{node_cmd}\""
+        ping_cmds.append(ssh_cmd)
+
+    subprocess.run(" & ".join(ping_cmds) + " & wait", shell=True)
+
+    rtt_dir = results_dir.parent / "rtt"
+    rtt_dir.mkdir(parents=True, exist_ok=True)
+    print(f"Downloading RTT logs to {rtt_dir}...")
+
+    scp_rtt_cmds = " & ".join([
+        f"gcloud compute scp brb-node-{i}:~/ping_rtt.log {rtt_dir}/node_{i}_rtt.log --zone={args.zone} --tunnel-through-iap --quiet" 
+        for i in range(max_nodes)
+    ]) + " & wait"
+    subprocess.run(scp_rtt_cmds, shell=True)
 
 # 3. Test Execution Loop
 configs = list(itertools.product(range(1, args.runs + 1), algorithms, args.payloads, args.nodes))
