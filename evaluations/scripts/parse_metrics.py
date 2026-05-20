@@ -102,6 +102,10 @@ def parse_environment(env_name):
                             "bytes_received": metrics.get("bytes_received", 0),
                             "messages_sent": metrics.get("messages_sent", 0),
                             "bytes_sent": metrics.get("bytes_sent", 0),
+                            "peak_heap_bytes": metrics.get("peak_heap_bytes", None),
+                            "cumulative_alloc_bytes": metrics.get(
+                                "cumulative_alloc_bytes", None
+                            ),
                             "cpu_instructions": metrics.get("cpu_instructions", None),
                         }
                     )

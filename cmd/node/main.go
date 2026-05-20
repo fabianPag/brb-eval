@@ -19,6 +19,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"runtime"
 	"strings"
 	"time"
 )
@@ -162,6 +163,13 @@ func main() {
 	if err := sendDoneAndWait(*controllerAddr, *nodeID); err != nil {
 		fmt.Printf("[ERROR] Failed to signal done: %v\n", err)
 	}
+
+	var m runtime.MemStats
+	runtime.ReadMemStats(&m)
+
+	peakHeapBytes := m.HeapSys
+	cumulativeAllocBytes := m.TotalAlloc
+
 	fmt.Println("All nodes done. Sending metrics...")
 
 	deliveredHashString := ""
@@ -173,18 +181,20 @@ func main() {
 	metricsResults := metricsInstance.GetMetrics()
 
 	metricsData := api.MetricsData{
-		NodeID:           *nodeID,
-		Role:             config.Role,
-		Delivered:        delivered,
-		DeliveryCount:    metricsResults.DeliveryCount,
-		DeliveredHash:    deliveredHashString,
-		SentHash:         sentHashString,
-		FirstMessageTime: metricsResults.FirstMessageTime,
-		DeliveryTime:     metricsResults.DeliveryTime,
-		MessagesReceived: metricsResults.MessagesReceived,
-		BytesReceived:    metricsResults.BytesReceived,
-		MessagesSent:     metricsResults.MessagesSent,
-		BytesSent:        metricsResults.BytesSent,
+		NodeID:               *nodeID,
+		Role:                 config.Role,
+		Delivered:            delivered,
+		DeliveryCount:        metricsResults.DeliveryCount,
+		DeliveredHash:        deliveredHashString,
+		SentHash:             sentHashString,
+		FirstMessageTime:     metricsResults.FirstMessageTime,
+		DeliveryTime:         metricsResults.DeliveryTime,
+		MessagesReceived:     metricsResults.MessagesReceived,
+		BytesReceived:        metricsResults.BytesReceived,
+		MessagesSent:         metricsResults.MessagesSent,
+		BytesSent:            metricsResults.BytesSent,
+		PeakHeapBytes:        peakHeapBytes,
+		CumulativeAllocBytes: cumulativeAllocBytes,
 	}
 
 	if err := sendMetricsAndWait(*controllerAddr, metricsData); err != nil {

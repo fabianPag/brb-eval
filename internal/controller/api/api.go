@@ -39,16 +39,18 @@ type Config struct {
 }
 
 type MetricsData struct {
-	NodeID           int       `json:"node_id"`
-	Role             string    `json:"role"`
-	Delivered        bool      `json:"delivered"`
-	DeliveryCount    int64     `json:"delivery_count"`
-	DeliveredHash    string    `json:"delivered_hash"`
-	SentHash         string    `json:"sent_hash"`
-	FirstMessageTime time.Time `json:"first_message_time"`
-	DeliveryTime     time.Time `json:"delivery_time"`
-	MessagesReceived int64     `json:"messages_received"`
-	BytesReceived    int64     `json:"bytes_received"`
-	MessagesSent     int64     `json:"messages_sent"`
-	BytesSent        int64     `json:"bytes_sent"`
+	NodeID               int       `json:"node_id"`
+	Role                 string    `json:"role"`
+	Delivered            bool      `json:"delivered"`
+	DeliveryCount        int64     `json:"delivery_count"`
+	DeliveredHash        string    `json:"delivered_hash"`
+	SentHash             string    `json:"sent_hash"`
+	FirstMessageTime     time.Time `json:"first_message_time"`
+	DeliveryTime         time.Time `json:"delivery_time"`
+	MessagesReceived     int64     `json:"messages_received"`
+	BytesReceived        int64     `json:"bytes_received"`
+	MessagesSent         int64     `json:"messages_sent"`
+	BytesSent            int64     `json:"bytes_sent"`
+	PeakHeapBytes        uint64    `json:"peak_heap_bytes"`
+	CumulativeAllocBytes uint64    `json:"cumulative_alloc_bytes"`
 }
