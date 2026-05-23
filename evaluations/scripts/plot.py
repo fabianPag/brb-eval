@@ -231,6 +231,14 @@ def get_scale_config(scale_type, args):
     return 1, ""
 
 
+def apply_selection_filters(df, args):
+    if args.payloads:
+        df = df[df["payload_size"].isin(args.payloads)]
+    if args.nodes:
+        df = df[df["n"].isin(args.nodes)]
+    return df
+
+
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("preset", choices=list(PLOT_PRESETS.keys()))
@@ -244,6 +252,35 @@ def parse_args():
         "--instr-scale",
         choices=["none", "thousands", "millions", "billions"],
         default="millions",
+    )
+
+    def parse_payload(s):
+        s = str(s).upper().strip()
+        try:
+            if s.endswith("MB"):
+                return int(float(s[:-2]) * 1_000_000)
+            if s.endswith("KB"):
+                return int(float(s[:-2]) * 1_000)
+            if s.endswith("B"):
+                return int(float(s[:-1]))
+            return int(float(s))
+        except ValueError:
+            raise argparse.ArgumentTypeError(f"Invalid payload format: '{s}'")
+
+    parser.add_argument(
+        "-p",
+        "--payloads",
+        type=parse_payload,
+        nargs="+",
+        help="Specific payload sizes to include",
+    )
+
+    parser.add_argument(
+        "-n",
+        "--nodes",
+        type=int,
+        nargs="+",
+        help="Specific network sizes to include",
     )
 
     return parser.parse_args()
@@ -265,6 +302,8 @@ def main():
         sys.exit(1)
 
     df = pd.read_csv(results_file)
+
+    df = apply_selection_filters(df, args)
 
     df = df[df["sender_role"] == "honest"]
     if config["baseline"]:
@@ -340,7 +379,13 @@ def main():
                 plt.xticks(sorted(subset["plot_x"].unique()))
 
             clean_suffix = fmt_suffix.strip()
-            out_name = f"{args.env}_{args.preset}_{loop_col}_{loop_display_val:g}{clean_suffix}.pdf"
+
+            unique_vals = sorted(subset["plot_x"].unique())
+            x_unit = x_suf.strip().upper() if x_suf and x_suf.strip() != "n" else ""
+            range_str = f"{min(unique_vals):g}-{max(unique_vals):g}{x_unit}"
+
+            out_name = f"{args.env}_{args.preset}_{loop_col}_{loop_display_val:g}{clean_suffix}_{range_str}.pdf"
+
             fig.savefig(plots_dir / out_name, bbox_inches="tight")
             plt.close(fig)
             print(f"Generated {out_name}")
