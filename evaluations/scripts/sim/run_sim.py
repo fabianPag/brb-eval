@@ -31,7 +31,7 @@ bin_dir = repo_root / "bin"
 
 algorithms = ["bracha", "afrt", "codedmbrb"]
 
-# Build binaries if they don't exist. Feel free to remove but I thought it would be more complete for a run script
+# Build binaries if they don't exist
 if not (bin_dir / "node").exists() or not (bin_dir / "controller").exists():
     print("Building binaries...")
     subprocess.run(["make", "build"], cwd=repo_root, check=True)
@@ -76,8 +76,64 @@ for p in args.payloads:
         print(f"Error: {e}")
         sys.exit(1)
 
+valid_configurations = []
+
+for config in configurations:
+    (
+        algorithm,
+        payload_size,
+        node_count,
+        t,
+        d,
+        num_silent,
+        num_msg_drops,
+        twins_sender,
+        seed,
+    ) = config
+
+    if node_count <= 0:
+        continue
+
+    actual_t, actual_d = t, d
+    if actual_t == -1 and actual_d == -1:
+        continue
+
+    if actual_t == -1:
+        actual_t = max((node_count - 2 * actual_d - 1) // 3, 0)
+    if actual_d == -1:
+        actual_d = max((node_count - 3 * actual_t - 1) // 2, 0)
+
+    if 3 * actual_t + 2 * actual_d >= node_count:
+        continue
+
+    if num_silent < 0 or num_silent > node_count - 1:
+        continue
+
+    max_possible_drops = max(node_count - num_silent - 1, 0)
+    if num_msg_drops < 0 or num_msg_drops > max_possible_drops:
+        continue
+
+    valid_configurations.append(
+        (
+            algorithm,
+            payload_size,
+            node_count,
+            actual_t,
+            actual_d,
+            num_silent,
+            num_msg_drops,
+            twins_sender,
+            seed,
+        )
+    )
+
+print(
+    f"Skipped {len(configurations) - len(valid_configurations)} invalid combinations."
+)
+print(f"Starting {len(valid_configurations)} simulations...")
+
 try:
-    for config in tqdm(configurations, desc="Progress", unit="config"):
+    for config in tqdm(valid_configurations, desc="Progress", unit="config"):
         (
             algorithm,
             payload_size,
