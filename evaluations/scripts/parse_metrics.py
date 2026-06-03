@@ -64,14 +64,17 @@ def parse_environment(env_name):
                     is_delivered = metrics.get("delivered", False)
                     delivery_count = metrics.get("delivery_count", 0)
 
-                    if delivery_count > 1:
-                        properties_valid = False
-                        print(
-                            f"[{env_name}] Property violation (Integrity/No-duplication): Node {node_id} delivered {delivery_count} times!"
-                        )
+                    if role == "honest":
+                        if delivery_count > 1:
+                            properties_valid = False
+                            print(
+                                f"[{env_name}] Property violation (Integrity/No-duplication): Honest node {node_id} delivered {delivery_count} times!"
+                            )
 
-                    if is_delivered:
-                        delivered_hashes.add(metrics.get("delivered_hash"))
+                        if is_delivered:
+                            h = metrics.get("delivered_hash", "")
+                            if h != "":
+                                delivered_hashes.add(h)
 
                     data.append(
                         {
@@ -117,18 +120,17 @@ def parse_environment(env_name):
             if len(delivered_hashes) > 1:
                 properties_valid = False
                 print(
-                    f"[{env_name}] Property violation (No-duplicity): {len(delivered_hashes)} different payloads delivered!"
+                    f"[{env_name}] Property violation (No-duplicity): {len(delivered_hashes)} different payloads delivered by honest nodes!"
                 )
 
             elif len(delivered_hashes) == 1:
                 only_hash = next(iter(delivered_hashes))
 
-                if sender_role == "honest":
-                    if only_hash != sender_sent_hash:
-                        properties_valid = False
-                        print(
-                            f"[{env_name}] Property violation (Validity): Delivered payload does not match sender!"
-                        )
+                if sender_role == "honest" and only_hash != sender_sent_hash:
+                    properties_valid = False
+                    print(
+                        f"[{env_name}] Property violation (Validity): Delivered payload does not match honest sender!"
+                    )
 
             if not properties_valid:
                 print(
