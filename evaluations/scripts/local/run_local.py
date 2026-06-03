@@ -72,8 +72,53 @@ for p in args.payloads:
         print(f"Error: {e}")
         sys.exit(1)
 
+valid_configurations = []
+
+for config in configurations:
+    run, algorithm, payload_size, node_count, t, d, num_silent, num_msg_drops = config
+
+    if node_count <= 0:
+        continue
+
+    actual_t, actual_d = t, d
+    if actual_t == -1 and actual_d == -1:
+        continue
+
+    if actual_t == -1:
+        actual_t = max((node_count - 2 * actual_d - 1) // 3, 0)
+    if actual_d == -1:
+        actual_d = max((node_count - 3 * actual_t - 1) // 2, 0)
+
+    if 3 * actual_t + 2 * actual_d >= node_count:
+        continue
+
+    if num_silent < 0 or num_silent > node_count - 1:
+        continue
+
+    max_possible_drops = max(node_count - num_silent - 1, 0)
+    if num_msg_drops < 0 or num_msg_drops > max_possible_drops:
+        continue
+
+    valid_configurations.append(
+        (
+            run,
+            algorithm,
+            payload_size,
+            node_count,
+            actual_t,
+            actual_d,
+            num_silent,
+            num_msg_drops,
+        )
+    )
+
+print(
+    f"Skipped {len(configurations) - len(valid_configurations)} invalid combinations."
+)
+print(f"Starting {len(valid_configurations)} executions...")
+
 try:
-    for config in tqdm(configurations, desc="Progress", unit="config"):
+    for config in tqdm(valid_configurations, desc="Progress", unit="config"):
         run, algorithm, payload_size, node_count, t, d, num_silent, num_msg_drops = (
             config
         )
