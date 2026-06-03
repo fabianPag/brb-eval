@@ -5,6 +5,7 @@ import sys
 import pandas as pd
 import argparse
 from pathlib import Path
+from tqdm import tqdm
 
 
 def parse_environment(env_name):
@@ -21,7 +22,7 @@ def parse_environment(env_name):
     all_files = glob.glob(str(raw_dir / "**" / "*.json"), recursive=True)
     data = []
 
-    for filepath in all_files:
+    for filepath in tqdm(all_files, desc=f"[{env_name}] Parsing", unit="file"):
         with open(filepath, "r") as f:
             json_data = json.load(f)
 
