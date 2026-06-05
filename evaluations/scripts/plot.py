@@ -22,11 +22,11 @@ PLOT_PRESETS = {
         "x_label": "Payload Size",
         "y_col": "global_latency",
         "y_scale": "none",
-        "y_label": "Latency (ms)",
+        "y_label": "Broadcast Completion Latency (ms)",
         "loop_col": "n",
         "loop_scale": "none",
         "loop_fmt": "n={value:g}",
-        "title": "Average Latency",
+        "title": "Broadcast Completion Latency",
     },
     "cpu_instructions_vs_payload": {
         "type": "line",
@@ -37,11 +37,11 @@ PLOT_PRESETS = {
         "x_label": "Payload Size",
         "y_col": "cpu_instructions",
         "y_scale": "cpu",
-        "y_label": "Average Instructions per Node",
+        "y_label": "Instructions per Node",
         "loop_col": "n",
         "loop_scale": "none",
         "loop_fmt": "n={value:g}",
-        "title": "Average CPU Instruction Count",
+        "title": "CPU Instruction Count",
     },
     "data_sent_vs_payload": {
         "type": "line",
@@ -67,11 +67,11 @@ PLOT_PRESETS = {
         "x_label": "Payload Size",
         "y_col": "peak_heap_bytes",
         "y_scale": "data",
-        "y_label": "Average Peak Heap Memory per Node",
+        "y_label": "Peak Heap Memory per Node",
         "loop_col": "n",
         "loop_scale": "none",
         "loop_fmt": "n={value:g}",
-        "title": "Average Peak Heap Memory",
+        "title": "Peak Heap Memory",
     },
     "cumulative_alloc_vs_payload": {
         "type": "line",
@@ -82,11 +82,11 @@ PLOT_PRESETS = {
         "x_label": "Payload Size",
         "y_col": "cumulative_alloc_bytes",
         "y_scale": "data",
-        "y_label": "Average Cumulative Memory Allocation per Node",
+        "y_label": "Cumulative Memory Allocation per Node",
         "loop_col": "n",
         "loop_scale": "none",
         "loop_fmt": "n={value:g}",
-        "title": "Average Cumulative Memory Allocation",
+        "title": "Cumulative Memory Allocation",
     },
     "latency_vs_nodes": {
         "type": "line",
@@ -98,11 +98,11 @@ PLOT_PRESETS = {
         "x_ticks": "unique",
         "y_col": "global_latency",
         "y_scale": "none",
-        "y_label": "Latency (ms)",
+        "y_label": "Broadcast Completion Latency (ms)",
         "loop_col": "payload_size",
         "loop_scale": "payload",
         "loop_fmt": "Payload={value:g} {suffix}",
-        "title": "Average Latency",
+        "title": "Broadcast Completion Latency",
     },
     "cpu_instructions_vs_nodes": {
         "type": "line",
@@ -114,11 +114,11 @@ PLOT_PRESETS = {
         "x_ticks": "unique",
         "y_col": "cpu_instructions",
         "y_scale": "cpu",
-        "y_label": "Average Instructions per Node",
+        "y_label": "Instructions per Node",
         "loop_col": "payload_size",
         "loop_scale": "payload",
         "loop_fmt": "Payload={value:g} {suffix}",
-        "title": "Average CPU Instruction Count",
+        "title": "CPU Instruction Count",
     },
     "data_sent_vs_nodes": {
         "type": "line",
@@ -162,11 +162,11 @@ PLOT_PRESETS = {
         "x_ticks": "unique",
         "y_col": "peak_heap_bytes",
         "y_scale": "data",
-        "y_label": "Average Peak Heap Memory per Node",
+        "y_label": "Peak Heap Memory per Node",
         "loop_col": "payload_size",
         "loop_scale": "payload",
         "loop_fmt": "Payload={value:g} {suffix}",
-        "title": "Average Peak Heap Memory",
+        "title": "Peak Heap Memory",
     },
     "cumulative_alloc_vs_nodes": {
         "type": "line",
@@ -178,11 +178,11 @@ PLOT_PRESETS = {
         "x_ticks": "unique",
         "y_col": "cumulative_alloc_bytes",
         "y_scale": "data",
-        "y_label": "Average Cumulative Memory Allocation per Node",
+        "y_label": "Cumulative Memory Allocation per Node",
         "loop_col": "payload_size",
         "loop_scale": "payload",
         "loop_fmt": "Payload={value:g} {suffix}",
-        "title": "Average Cumulative Memory Allocation",
+        "title": "Cumulative Memory Allocation",
     },
     "delivering_vs_silent": {
         "type": "bft_bar",
@@ -193,14 +193,23 @@ PLOT_PRESETS = {
         "y_label": "Delivering Nodes",
         "title": "Delivering Nodes",
     },
-    "messages_vs_silent": {
+    "messages_vs_silent_bar": {
         "type": "bft_bar",
         "baseline": False,
         "x_col": "num_silent",
         "x_label": "Silent Nodes",
         "y_col": "messages_sent",
-        "y_label": "Average Messages per Node",
-        "title": "Average Messages per Node",
+        "y_label": "Messages Sent per Node",
+        "title": "Messages Sent per Node (Average)",
+    },
+    "messages_vs_silent_box": {
+        "type": "bft_box",
+        "baseline": False,
+        "x_col": "num_silent",
+        "x_label": "Silent Nodes",
+        "y_col": "messages_sent",
+        "y_label": "Messages Sent per Node",
+        "title": "Messages Sent per Node (Distribution)",
     },
 }
 
@@ -283,6 +292,11 @@ def parse_args():
         help="Specific network sizes to include",
     )
 
+    parser.add_argument(
+        "--hide-minmax",
+        action="store_true",
+    )
+
     return parser.parse_args()
 
 
@@ -354,6 +368,35 @@ def main():
                 errorbar="sd",
             )
 
+            if not args.hide_minmax:
+                min_max_df = (
+                    subset.groupby(["algorithm", "plot_x"])["plot_y"]
+                    .agg(["min", "max"])
+                    .reset_index()
+                )
+                for algo in algorithm_order:
+                    if algo in min_max_df["algorithm"].values:
+                        algo_data = min_max_df[min_max_df["algorithm"] == algo]
+                        algo_color = color_map.get(algo, "black")
+
+                        plt.plot(
+                            algo_data["plot_x"],
+                            algo_data["min"],
+                            linestyle="--",
+                            color=algo_color,
+                            alpha=0.5,
+                            label="_nolegend_",
+                        )
+
+                        plt.plot(
+                            algo_data["plot_x"],
+                            algo_data["max"],
+                            linestyle="-.",
+                            color=algo_color,
+                            alpha=0.5,
+                            label="_nolegend_",
+                        )
+
             x_label = f"{config['x_label']} ({x_suf})" if x_suf else config["x_label"]
             y_label = f"{config['y_label']} ({y_suf})" if y_suf else config["y_label"]
 
@@ -416,7 +459,7 @@ def main():
                 .reset_index()
             )
 
-        elif args.preset == "messages_vs_silent":
+        elif args.preset == "messages_vs_silent_bar":
             df_seed = (
                 df.groupby(
                     ["algorithm", "n", "payload_size", "num_silent", iteration_col]
@@ -460,6 +503,107 @@ def main():
                     ax=ax,
                     errorbar=None,
                     saturation=1.0,
+                )
+
+                ax.set_xticks(np.arange(0, n))
+                ax.set_xlim(-0.6, n - 0.4)
+
+                threshold = n / 3
+                ax.axvline(x=threshold, color="gray", linestyle="--", linewidth=1.5)
+                ax.text(
+                    threshold,
+                    ax.get_ylim()[1] * 1.02,
+                    "Silent < n/3",
+                    color="gray",
+                    ha="center",
+                    va="bottom",
+                    fontsize=11,
+                    style="italic",
+                )
+
+                ax.set_xlabel(config["x_label"], fontsize=11, labelpad=10)
+                ax.set_ylabel(config["y_label"], fontsize=11, labelpad=10)
+                ax.set_title(
+                    f"Silent Node Threshold: {config['title']} (n={n}, Payload={payload_str})",
+                    pad=20,
+                )
+
+                ax.legend(loc="upper right", frameon=True)
+                ax.grid(
+                    axis="y", color="lightgray", linestyle="-", linewidth=0.7, alpha=0.7
+                )
+                ax.grid(axis="x", visible=False)
+                ax.spines["top"].set_visible(False)
+                ax.spines["right"].set_visible(False)
+
+                out_name = f"{args.env}_{args.preset}_n{n}_p{payload / p_div:g}{p_suf.upper()}.pdf"
+                fig.savefig(plots_dir / out_name, bbox_inches="tight")
+                plt.close(fig)
+                print(f"Generated {out_name}")
+
+    elif config["type"] == "bft_box":
+        if args.preset == "messages_vs_silent_box":
+            df_plot = (
+                df.groupby(
+                    ["algorithm", "n", "payload_size", "num_silent", iteration_col]
+                )["messages_sent"]
+                .mean()
+                .reset_index()
+            )
+            df_plot["plot_y"] = df_plot["messages_sent"] * (
+                (df_plot["n"] - df_plot["num_silent"]) / df_plot["n"]
+            )
+
+        for n in sorted(df_plot["n"].unique()):
+            for payload in sorted(df_plot[df_plot["n"] == n]["payload_size"].unique()):
+                subset = df_plot[
+                    (df_plot["n"] == n) & (df_plot["payload_size"] == payload)
+                ]
+                if subset["num_silent"].nunique() < 2:
+                    continue
+
+                p_div, p_suf = get_scale_config("payload", args)
+                payload_str = f"{payload / p_div:g} {p_suf.upper()}"
+
+                fig, ax = plt.subplots(figsize=(10, 6))
+
+                sns.boxplot(
+                    data=subset,
+                    x="num_silent",
+                    y="plot_y",
+                    hue="algorithm",
+                    palette=color_map,
+                    hue_order=[
+                        a for a in algorithm_order if a in subset["algorithm"].values
+                    ],
+                    ax=ax,
+                    boxprops={"alpha": 0.8},
+                    showfliers=False,
+                    saturation=1.0,
+                )
+
+                medians_df = (
+                    subset.groupby(["num_silent", "algorithm"])["plot_y"]
+                    .median()
+                    .reset_index()
+                )
+
+                sns.stripplot(
+                    data=medians_df,
+                    x="num_silent",
+                    y="plot_y",
+                    hue="algorithm",
+                    palette=color_map,
+                    hue_order=[
+                        a for a in algorithm_order if a in subset["algorithm"].values
+                    ],
+                    dodge=True,
+                    jitter=False,
+                    marker="_",
+                    size=5,
+                    linewidth=1,
+                    ax=ax,
+                    legend=False,
                 )
 
                 ax.set_xticks(np.arange(0, n))
