@@ -12,8 +12,8 @@ EXPECTED_FINAL_STATE ?= 0
 
 build:
 	@mkdir -p ./bin
-	go build -o ./bin/node ./cmd/node
-	go build -o ./bin/controller ./cmd/controller
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./bin/node ./cmd/node
+	CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -o ./bin/controller ./cmd/controller
 
 clean:
 	rm -rf ./bin
