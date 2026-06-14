@@ -161,7 +161,7 @@ func main() {
 
 	fmt.Println("Signaling done...")
 	if err := sendDoneAndWait(*controllerAddr, *nodeID); err != nil {
-		fmt.Printf("[ERROR] Failed to signal done: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to signal done: %v\n", err)
 	}
 
 	var m runtime.MemStats
@@ -198,7 +198,7 @@ func main() {
 	}
 
 	if err := sendMetricsAndWait(*controllerAddr, metricsData); err != nil {
-		fmt.Printf("[ERROR] Failed to send metrics: %v\n", err)
+		fmt.Fprintf(os.Stderr, "[ERROR] Failed to send metrics: %v\n", err)
 	}
 	fmt.Printf("Metrics sent successfully.\n")
 
@@ -258,9 +258,44 @@ func sendRegisterAndWait(controllerAddr string, nodeAddr string, nodeID int, pub
 	client := &http.Client{
 		Timeout: time.Minute,
 	}
-	resp, err := client.Post("http://"+controllerAddr+"/register", "application/json", bytes.NewReader(body))
+
+	var resp *http.Response
+	deadline := time.Now().Add(30 * time.Second)
+	currentDelay := 100 * time.Millisecond
+	maxDelay := 2 * time.Second
+	attempts := 0
+
+	for time.Now().Before(deadline) {
+		attempts++
+
+		resp, err = client.Post("http://"+controllerAddr+"/register", "application/json", bytes.NewReader(body))
+
+		if err == nil && resp.StatusCode == http.StatusOK {
+			break
+		}
+
+		if resp != nil {
+			resp.Body.Close()
+		}
+
+		randBytes := make([]byte, 1)
+		rand.Read(randBytes)
+
+		randFloat := float64(randBytes[0]) / 255.0
+		jitter := time.Duration(randFloat * float64(currentDelay) * 0.5)
+
+		time.Sleep(currentDelay + jitter)
+		currentDelay *= 2
+		if currentDelay > maxDelay {
+			currentDelay = maxDelay
+		}
+	}
+
 	if err != nil {
-		return api.Config{}, err
+		return api.Config{}, fmt.Errorf("failed to connect after %d attempts: %v", attempts, err)
+	}
+	if resp.StatusCode != http.StatusOK {
+		return api.Config{}, fmt.Errorf("controller responded with unexpected status code: %d", resp.StatusCode)
 	}
 	defer resp.Body.Close()
 

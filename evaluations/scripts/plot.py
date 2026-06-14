@@ -251,7 +251,7 @@ def apply_selection_filters(df, args):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("preset", choices=list(PLOT_PRESETS.keys()))
-    parser.add_argument("--env", required=True, choices=["gcp", "local", "sim"])
+    parser.add_argument("--env", required=True, choices=["gcp", "local", "sim", "fabric"])
 
     parser.add_argument(
         "--payload-scale", choices=["b", "kb", "mb", "gb"], default="mb"

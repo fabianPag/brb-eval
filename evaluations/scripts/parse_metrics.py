@@ -152,13 +152,13 @@ if __name__ == "__main__":
     parser.add_argument(
         "--env",
         type=str,
-        choices=["gcp", "local", "sim", "all"],
+        choices=["gcp", "local", "sim", "fabric", "all"],
         default="all",
     )
     args = parser.parse_args()
 
     if args.env == "all":
-        for e in ["gcp", "local", "sim"]:
+        for e in ["gcp", "local", "sim", "fabric"]:
             parse_environment(e)
     else:
         parse_environment(args.env)
