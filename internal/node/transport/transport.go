@@ -7,6 +7,7 @@ import (
 	"io"
 	"net"
 	"sync"
+	"time"
 )
 
 type PeerConn struct {
@@ -15,19 +16,23 @@ type PeerConn struct {
 }
 
 type TCPTransport struct {
-	id       core.NodeID
-	peers    map[core.NodeID]string
-	recvChan chan core.TransportMessage
-	conns    map[core.NodeID]*PeerConn
-	mu       sync.RWMutex
+	id         core.NodeID
+	peers      map[core.NodeID]string
+	recvChan   chan core.TransportMessage
+	conns      map[core.NodeID]*PeerConn
+	mu         sync.RWMutex
+	rtts       map[core.NodeID]time.Duration
+	measureRTT bool
 }
 
-func NewTCPTransport(id core.NodeID) core.Transport {
+func NewTCPTransport(id core.NodeID, measureRTT bool) core.Transport {
 	return &TCPTransport{
-		id:       id,
-		peers:    make(map[core.NodeID]string),
-		recvChan: make(chan core.TransportMessage),
-		conns:    make(map[core.NodeID]*PeerConn),
+		id:         id,
+		peers:      make(map[core.NodeID]string),
+		recvChan:   make(chan core.TransportMessage),
+		conns:      make(map[core.NodeID]*PeerConn),
+		rtts:       make(map[core.NodeID]time.Duration),
+		measureRTT: measureRTT,
 	}
 }
 
@@ -52,9 +57,36 @@ func (t *TCPTransport) dialConn(id core.NodeID) {
 
 	handshake := make([]byte, 4)
 	binary.BigEndian.PutUint32(handshake, uint32(t.id))
+
+	var start time.Time
+	if t.measureRTT {
+		start = time.Now()
+	}
+
 	if _, err := conn.Write(handshake); err != nil {
 		conn.Close()
 		return
+	}
+
+	if t.measureRTT {
+		ack := make([]byte, 1)
+		if _, err := io.ReadFull(conn, ack); err != nil {
+			conn.Close()
+			return
+		}
+
+		rtt := time.Since(start)
+
+		rttMsg := make([]byte, 8)
+		binary.BigEndian.PutUint64(rttMsg, uint64(rtt.Nanoseconds()))
+		if _, err := conn.Write(rttMsg); err != nil {
+			conn.Close()
+			return
+		}
+
+		t.mu.Lock()
+		t.rtts[id] = rtt
+		t.mu.Unlock()
 	}
 
 	t.registerConn(id, conn)
@@ -137,6 +169,25 @@ func (t *TCPTransport) acceptHandshake(conn net.Conn) {
 
 	peerID := core.NodeID(dialerID)
 
+	if t.measureRTT {
+		if _, err := conn.Write([]byte{1}); err != nil {
+			conn.Close()
+			return
+		}
+
+		rttMsg := make([]byte, 8)
+		if _, err := io.ReadFull(conn, rttMsg); err != nil {
+			conn.Close()
+			return
+		}
+
+		rtt := time.Duration(binary.BigEndian.Uint64(rttMsg))
+
+		t.mu.Lock()
+		t.rtts[peerID] = rtt
+		t.mu.Unlock()
+	}
+
 	t.registerConn(peerID, conn)
 	go t.handleIncoming(conn, peerID)
 }
@@ -186,4 +237,15 @@ func (t *TCPTransport) NumPeers() int {
 	t.mu.RLock()
 	defer t.mu.RUnlock()
 	return len(t.peers)
+}
+
+func (t *TCPTransport) GetRTTs() map[core.NodeID]time.Duration {
+	t.mu.RLock()
+	defer t.mu.RUnlock()
+
+	rttMap := make(map[core.NodeID]time.Duration)
+	for k, v := range t.rtts {
+		rttMap[k] = v
+	}
+	return rttMap
 }

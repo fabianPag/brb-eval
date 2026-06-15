@@ -77,6 +77,16 @@ def parse_environment(env_name):
                             if h != "":
                                 delivered_hashes.add(h)
 
+                    rtts_dict = metrics.get("rtts", {})
+                    rtt_values = []
+
+                    if isinstance(rtts_dict, dict) and rtts_dict:
+                        rtt_values = list(rtts_dict.values())
+
+                    min_rtt = min(rtt_values) if rtt_values else None
+                    max_rtt = max(rtt_values) if rtt_values else None
+                    avg_rtt = sum(rtt_values) / len(rtt_values) if rtt_values else None
+
                     data.append(
                         {
                             "env": env_name,
@@ -111,6 +121,9 @@ def parse_environment(env_name):
                                 "cumulative_alloc_bytes", None
                             ),
                             "cpu_instructions": metrics.get("cpu_instructions", None),
+                            "min_rtt": min_rtt,
+                            "avg_rtt": avg_rtt,
+                            "max_rtt": max_rtt,
                         }
                     )
             else:

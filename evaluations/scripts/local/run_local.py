@@ -167,6 +167,7 @@ try:
                     f"-id={i}",
                     f"-addr=127.0.0.1:{node_port}",
                     f"-controller={controller_addr}",
+                    "-measureRTT=false",
                 ]
 
                 if not args.no_perf:

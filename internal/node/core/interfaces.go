@@ -29,6 +29,7 @@ type Transport interface {
 	ConnectAll() error
 	NumPeers() int
 	SetPeers(peers map[NodeID]string)
+	GetRTTs() map[NodeID]time.Duration
 }
 
 type Metrics interface {

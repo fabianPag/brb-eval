@@ -51,7 +51,7 @@ do
     network_node_id: 0
     processes:
     - path: $NODE_BIN
-      args: "-id=$i -addr=peer$i:8080 -controller=controller:9000"
+      args: "-id=$i -addr=peer$i:8080 -controller=controller:9000 -measureRTT=false"
       start_time: 1s
       expected_final_state: {exited: $EXPECTED_FINAL_STATE}
 EOF

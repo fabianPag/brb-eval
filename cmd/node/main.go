@@ -34,6 +34,7 @@ func main() {
 	nodeAddr := flag.String("addr", "", "this nodes host:port")
 	controllerAddr := flag.String("controller", "", "address of the controller")
 	deliveryTimeoutFlag := flag.Duration("deliveryTimeout", 30*time.Second, "Max time to wait for algorithm delivery")
+	measureRTTFlag := flag.Bool("measureRTT", true, "measure RTTs when establishing P2P connections")
 
 	flag.Usage = func() {
 		fmt.Fprintf(os.Stderr, "Usage: node -id=<id> -addr=<host:port> -controller=<host:port> [options]\n\n")
@@ -49,7 +50,7 @@ func main() {
 
 	fmt.Printf("Starting node at %s\n", *nodeAddr)
 
-	tcpTransport := transport.NewTCPTransport(core.NodeID(*nodeID))
+	tcpTransport := transport.NewTCPTransport(core.NodeID(*nodeID), *measureRTTFlag)
 	if err := tcpTransport.Listen(*nodeAddr); err != nil {
 		fmt.Fprintf(os.Stderr, "[ERROR] Failed to start listener: %v\n", err)
 		os.Exit(1)
@@ -180,6 +181,15 @@ func main() {
 
 	metricsResults := metricsInstance.GetMetrics()
 
+	rttMap := make(map[string]float64)
+
+	if *measureRTTFlag {
+		for peerID, duration := range tcpTransport.GetRTTs() {
+			peerKey := fmt.Sprintf("%d", peerID)
+			rttMap[peerKey] = float64(duration) / float64(time.Millisecond)
+		}
+	}
+
 	metricsData := api.MetricsData{
 		NodeID:               *nodeID,
 		Role:                 config.Role,
@@ -195,6 +205,7 @@ func main() {
 		BytesSent:            metricsResults.BytesSent,
 		PeakHeapBytes:        peakHeapBytes,
 		CumulativeAllocBytes: cumulativeAllocBytes,
+		RTTs:                 rttMap,
 	}
 
 	if err := sendMetricsAndWait(*controllerAddr, metricsData); err != nil {
