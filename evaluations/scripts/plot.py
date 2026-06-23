@@ -211,6 +211,51 @@ PLOT_PRESETS = {
         "y_label": "Messages Sent per Node",
         "title": "Messages Sent per Node (Distribution)",
     },
+    "cpu_instructions_vs_silent": {
+        "type": "line",
+        "agg": "raw",
+        "baseline": False,
+        "x_col": "num_silent",
+        "x_scale": "none",
+        "x_label": "Silent Nodes",
+        "y_col": "cpu_instructions",
+        "y_scale": "cpu",
+        "y_label": "Instructions per Node",
+        "loop_col": "payload_size",
+        "loop_scale": "payload",
+        "loop_fmt": "Payload={value:g} {suffix}",
+        "title": "CPU Instruction Count",
+    },
+    "peak_heap_vs_silent": {
+        "type": "line",
+        "agg": "mean",
+        "baseline": False,
+        "x_col": "num_silent",
+        "x_scale": "none",
+        "x_label": "Silent Nodes",
+        "y_col": "peak_heap_bytes",
+        "y_scale": "data",
+        "y_label": "Peak Heap Memory per Node",
+        "loop_col": "payload_size",
+        "loop_scale": "payload",
+        "loop_fmt": "Payload={value:g} {suffix}",
+        "title": "Peak Heap Memory",
+    },
+    "cumulative_alloc_vs_silent": {
+        "type": "line",
+        "agg": "mean",
+        "baseline": False,
+        "x_col": "num_silent",
+        "x_scale": "none",
+        "x_label": "Silent Nodes",
+        "y_col": "cumulative_alloc_bytes",
+        "y_scale": "data",
+        "y_label": "Cumulative Memory Allocation per Node",
+        "loop_col": "payload_size",
+        "loop_scale": "payload",
+        "loop_fmt": "Payload={value:g} {suffix}",
+        "title": "Cumulative Memory Allocation",
+    },
 }
 
 
@@ -251,7 +296,9 @@ def apply_selection_filters(df, args):
 def parse_args():
     parser = argparse.ArgumentParser()
     parser.add_argument("preset", choices=list(PLOT_PRESETS.keys()))
-    parser.add_argument("--env", required=True, choices=["gcp", "local", "sim", "fabric"])
+    parser.add_argument(
+        "--env", required=True, choices=["gcp", "local", "sim", "fabric"]
+    )
 
     parser.add_argument(
         "--payload-scale", choices=["b", "kb", "mb", "gb"], default="mb"
@@ -338,11 +385,11 @@ def main():
         if config["agg"] == "raw":
             df_agg = df.copy()
         else:
-            df_agg = (
-                df.groupby(["algorithm", "n", "payload_size", iteration_col])[y_col]
-                .agg(config["agg"])
-                .reset_index()
-            )
+            groupby_cols = ["algorithm", "n", "payload_size", iteration_col]
+            if x_col not in groupby_cols:
+                groupby_cols.append(x_col)
+
+            df_agg = df.groupby(groupby_cols)[y_col].agg(config["agg"]).reset_index()
 
         x_div, x_suf = get_scale_config(config["x_scale"], args)
         y_div, y_suf = get_scale_config(config["y_scale"], args)
